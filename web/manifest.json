@@ -1,5 +1,5 @@
 {
-  "name": "Knobby MTG Life Counter",
+  "name": "Knobby SWU Base Counter",
   "version": "latest",
   "new_install_prompt_erase": true,
   "builds": [

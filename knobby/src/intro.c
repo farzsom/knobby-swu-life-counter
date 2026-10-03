@@ -6,11 +6,14 @@ extern void back_to_main(void);
 lv_obj_t *screen_intro = NULL;
 
 static lv_obj_t *intro_letters[INTRO_CHAR_COUNT];
+static lv_obj_t *intro_subtitle = NULL;
 static uint8_t intro_step = 0;
 static lv_timer_t *intro_timer = NULL;
 
 static const char *intro_text[INTRO_CHAR_COUNT] = {"k", "n", "o", "b", "b", "y", "."};
-static const uint32_t intro_colors[INTRO_CHAR_COUNT] = {0x9C5CFF, 0xF6C945, 0x42A5F5, 0x06D6A0, 0x06D6A0, 0xE53935, 0xFFFFFF};
+/* One letter per aspect: Vigilance, Command, Aggression, Cunning, Heroism,
+   Villainy (grey, since black would vanish on the black screen). */
+static const uint32_t intro_colors[INTRO_CHAR_COUNT] = {0x2F7FD0, 0x3FA34D, 0xD3322F, 0xF2C230, 0xEDE6D6, 0x8A8A8A, 0xFFFFFF};
 static const lv_coord_t intro_x[INTRO_CHAR_COUNT] = {56, 98, 140, 182, 214, 246, 284};
 
 void refresh_intro_ui(void)
@@ -24,6 +27,14 @@ void refresh_intro_ui(void)
             lv_obj_clear_flag(intro_letters[i], LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(intro_letters[i], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    if (intro_subtitle != NULL) {
+        if (intro_step >= INTRO_CHAR_COUNT) {
+            lv_obj_clear_flag(intro_subtitle, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(intro_subtitle, LV_OBJ_FLAG_HIDDEN);
         }
     }
 }
@@ -62,6 +73,13 @@ void build_intro_screen(void)
         lv_obj_set_pos(intro_letters[i], intro_x[i], 146);
         lv_obj_add_flag(intro_letters[i], LV_OBJ_FLAG_HIDDEN);
     }
+
+    intro_subtitle = lv_label_create(screen_intro);
+    lv_label_set_text(intro_subtitle, "SWU base counter");
+    lv_obj_set_style_text_color(intro_subtitle, lv_color_hex(0x8A8A8A), 0);
+    lv_obj_set_style_text_font(intro_subtitle, &lv_font_montserrat_16, 0);
+    lv_obj_align(intro_subtitle, LV_ALIGN_CENTER, 0, 30);
+    lv_obj_add_flag(intro_subtitle, LV_OBJ_FLAG_HIDDEN);
 
     refresh_intro_ui();
 }

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Font generation script for Knobby MTG Life Counter
+# Font generation script for Knobby SWU Base Counter
 # Requires lv_font_conv on PATH (install via: npm install -g lv_font_conv)
 #
 # Usage:  ./generate_fonts.sh
@@ -22,7 +22,7 @@ BOLD=Montserrat-Bold.ttf
 REGULAR=Montserrat-Regular.ttf
 
 # ---------- Character ranges ----------
-# Digits + signs for life total / dice (space, +, -, 0-9, =)
+# Digits + signs for damage totals (space, +, -, 0-9, =)
 RANGE_DIGITS="0x20,0x2B,0x2D,0x30-0x39,0x3D"
 
 # Full printable ASCII (for general UI text)
@@ -59,13 +59,13 @@ generate_font() {
 
 # ---------- Generate fonts ----------
 
-# Large bold font for life total and dice result
+# Large bold font for the 1-player damage total
 generate_font "lv_font_montserrat_bold_116" "$BOLD" 116 "$RANGE_DIGITS"
 
-# Regular font for life preview total ("= xxx")
+# Regular font for the damage preview total ("= xx")
 generate_font "lv_font_montserrat_regular_48" "$REGULAR" 48 "$RANGE_DIGITS"
 
-# Bold fonts for multiplayer life totals (56 for absolute/tabletop, 44 for centric)
+# Bold fonts for multiplayer damage totals (56 for absolute/tabletop, 44 for centric)
 generate_font "lv_font_montserrat_bold_56" "$BOLD" 56 "$RANGE_DIGITS"
 generate_font "lv_font_montserrat_bold_44" "$BOLD" 44 "$RANGE_DIGITS"
 

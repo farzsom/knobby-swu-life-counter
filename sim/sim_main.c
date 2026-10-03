@@ -13,12 +13,11 @@
 #include "ui_player_menu.h"
 #include "settings.h"
 #include "intro.h"
-#include "dice.h"
+#include "coin.h"
 #include "timer.h"
 #include "damage_log.h"
 #include "game_mode.h"
 #include "rename.h"
-#include "mana.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -126,36 +125,19 @@ static void nav_brightness(void) { open_settings_screen(); }
 static void nav_battery(void)    { open_battery_screen(); }
 static void nav_rotate(void)     { open_rotate_screen(); }
 static void nav_table_sync(void) { open_table_sync_screen(); }
-static void nav_dice(void)       { open_dice_screen(); }
+static void nav_coin(void)       { open_coin_screen(); }
 static void nav_damage_log(void) { open_damage_log_screen(); }
 static void nav_game_mode(void)  { open_game_mode_menu(); }
-static void nav_custom_life(void){ open_game_mode_menu(); lv_scr_load(screen_custom_life); refresh_custom_life_ui(); }
-static void nav_select(void)     { open_select_screen(); }
-static void nav_damage(void) {
-    selected_enemy = 0;
-    damage_enter();
-    refresh_damage_ui();
-    lv_scr_load(screen_damage);
-}
+static void nav_custom_hp(void)  { open_game_mode_menu(); lv_scr_load(screen_custom_hp); refresh_custom_hp_ui(); }
 static void nav_player_menu(void)  { open_player_menu(0); }
+static void nav_hp_edit(void)      { open_player_menu(0); open_hp_edit_screen(); }
+static void nav_eliminated(void)   { load_screen_if_needed(screen_eliminated_player_menu); }
 static void nav_rename(void)       { open_rename_screen(); }
-static void nav_all_damage(void) {
-    all_damage_value = 5;
-    refresh_all_damage_ui();
-    lv_scr_load(screen_player_all_damage);
-}
-static void nav_counters_menu(void) { lv_scr_load(screen_counter_menu); }
-static void nav_counter_edit(void) {
-    begin_counter_edit(0, COUNTER_TYPE_POISON);
-    refresh_counter_edit_ui();
-    lv_scr_load(screen_counter_edit);
-}
 static void nav_color_menu(void)   { load_screen_if_needed(screen_player_color_menu); }
 static void nav_color_picker(void) {
     player_color_index[menu_player] = 5;  /* show Orange as example */
     load_screen_if_needed(screen_player_color_picker);
 }
-static void nav_mana(void) { open_mana_screen(); }
 
 static const screen_entry_t all_screens[] = {
     {"main",          nav_main},
@@ -171,20 +153,16 @@ static const screen_entry_t all_screens[] = {
     {"battery",       nav_battery},
     {"rotate",        nav_rotate},
     {"table-sync",    nav_table_sync},
-    {"dice",          nav_dice},
+    {"coin",          nav_coin},
     {"damage-log",    nav_damage_log},
     {"game-mode",     nav_game_mode},
-    {"custom-life",   nav_custom_life},
-    {"select",        nav_select},
-    {"damage",        nav_damage},
+    {"custom-hp",     nav_custom_hp},
     {"player-menu",   nav_player_menu},
+    {"hp-edit",       nav_hp_edit},
+    {"eliminated",    nav_eliminated},
     {"rename",        nav_rename},
-    {"all-damage",    nav_all_damage},
-    {"counters-menu", nav_counters_menu},
-    {"counter-edit",  nav_counter_edit},
     {"color-menu",    nav_color_menu},
     {"color-picker",  nav_color_picker},
-    {"mana",          nav_mana},
     {NULL, NULL}
 };
 
@@ -225,18 +203,20 @@ static void print_usage(void)
            "  --outdir <path>        Output directory (default: screenshots)\n"
            "  --output <filename>    Output filename (overrides default naming)\n"
            "\nGame state:\n"
-           "  --life <p1,p2,...>     Set player life totals (default: starting-life for all)\n"
-           "  --names <p1,p2,...>    Set player names (default: P1..P8)\n"
-           "  --players <n>          Number of players in the game, 1-8 (default: 4)\n"
+           "  --damage <p1,p2,...>   Set damage on each base (default: 0)\n"
+           "  --names <p1,p2,...>    Set player names (default: P1..P4)\n"
            "  --track <n>            Players shown on screen, 1-4 (default: 1)\n"
-           "  --starting-life <n>    Starting/max life total (default: 40)\n"
+           "  --base-hp <n>          Default base HP for every player (default: 30)\n"
+           "  --player-hp <csv>      Per-player base HP, e.g. 30,27\n"
+           "  --initiative <n>       Player holding the initiative, -1=none (default: -1)\n"
+           "  --force <csv>          Per-player Force token flags, e.g. 0,1\n"
            "  --selected <n>         Which player is selected, -1=none (default: -1)\n"
            "  --selected-players <csv> Players selected together, e.g. 0,2 (multi-select set)\n"
-           "\nLife preview (shows pending delta before commit):\n"
-           "  --preview-delta <n>    Pending life change to display (e.g. +12, -5)\n"
+           "\nDamage preview (shows pending delta before commit):\n"
+           "  --preview-delta <n>    Pending damage change to display (e.g. +3, -2)\n"
            "  --preview-player <n>   Which player shows the preview, -1=1p mode (default: -1)\n"
            "\nDisplay settings:\n"
-           "  --color-mode <n>       0=player, 1=life (default: 0)\n"
+           "  --color-mode <n>       0=player, 1=HP (default: 0)\n"
            "  --player-colors <csv>  Per-player custom color indices, e.g. 0,5,2,13\n"
            "  --player-override <csv> Per-player override flags, e.g. 0,1,0,0\n"
            "  --orientation <n>      0=absolute, 1=centric, 2=tabletop (default: 0)\n"
@@ -246,39 +226,26 @@ static void print_usage(void)
            "  --auto-dim <n>         0=OFF, 1=15s, 2=30s, 3=60s (default: 0)\n"
            "  --deselect <n>         0=never, 1=5s, 2=15s, 3=30s (default: 0)\n"
            "  --auto-eliminate <n>   0=OFF, 1=ON (default: 1)\n"
-           "  --random-first <n>     0=OFF, 1=ON random first-player pick on reset (default: 1)\n"
+           "  --random-first <n>     0=OFF, 1=ON random initiative pick on reset (default: 1)\n"
            "  --multi-select <n>     0=OFF, 1=ON (default: 0)\n"
            "  --table-sync <n>       0=OFF, 1=ON ESP-NOW table sync (default: 0)\n"
            "  --table-session <n>    Table sync game session ID, 0=none (default: 0)\n"
            "\nSpecial state:\n"
-           "  --dice <n>             Set dice roll result (1-20)\n"
-           "  --counter-type <n>     Counter type for counter-edit: 0=cmd tax, 1=partner tax,\n"
-           "                         2=poison, 3=experience (default: 2)\n"
-           "  --counter-value <n>    Committed counter value for counter-edit (default: 0)\n"
-           "  --counter-delta <n>    Pending knob delta on counter-edit (default: 0)\n"
-           "  --counter-player <n>   Player for counter-edit, 0-3 (default: 0)\n"
-           "  --enemy-damage <csv>   Set commander damage per enemy row (e.g. 5,12,3)\n"
-           "  --damage-delta <n>     Pending knob delta on the damage screen (default: 0)\n"
-           "  --all-damage-value <n> Value for all-damage screen (default: 5)\n"
-           "  --menu-player <n>      Player index for player-menu, 0-3 (default: 0)\n"
+           "  --coin <n>             Coin flip result: 1=heads, 2=tails\n"
+           "  --hp-edit-delta <n>    Pending knob delta on the hp-edit screen (default: 0)\n"
+           "  --menu-player <n>      Player index for player menus, 0-3 (default: 0)\n"
            "  --battery-voltage <f>  Battery voltage for battery screen (default: 4.0)\n"
-           "  --random-counters      Set all player counters to random values 0-99\n"
            "  --random-log           Populate event log with random entries\n"
-           "\nMana pool:\n"
-           "  --mana <W,U,B,R,G,C>  Set mana pool values (e.g. 3,1,0,2,0,5)\n"
-           "  --mana-selected <n>    Selected mana color, -1=none (default: -1)\n"
-           "  --mana-delta <n>       Pending mana delta for preview display (e.g. +5, -3)\n"
            "\nTimer state (1p only):\n"
-           "  --turn-number <n>      Turn number (enables timer display when > 0)\n"
+           "  --turn-number <n>      Round number (enables timer display when > 0)\n"
            "  --turn-elapsed <ms>    Elapsed game time in milliseconds\n"
            "\n  --help, -h             Show this message\n"
            "\nAvailable screens:\n"
            "  main 1p 2p 3p 4p intro menu tools settings-menu\n"
            "  settings-page<N>       Settings page N (1-based)\n"
            "  setting:<id>           Page hosting a setting (e.g. setting:autodim)\n"
-           "  brightness battery rotate dice damage-log game-mode custom-life select\n"
-           "  damage player-menu rename all-damage counters-menu counter-edit\n"
-           "  color-menu color-picker mana\n"
+           "  brightness battery rotate table-sync coin damage-log game-mode custom-hp\n"
+           "  player-menu hp-edit eliminated rename color-menu color-picker\n"
            "\nIntrospection:\n"
            "  --print-settings-pages Print the number of settings pages and exit\n");
 }
@@ -312,15 +279,6 @@ static void parse_csv_strings(const char *csv, char names[][16], int max_count)
     }
 }
 
-/* ---- Random data generators ---- */
-static void populate_random_counters(void)
-{
-    int p, t;
-    for (p = 0; p < MAX_DISPLAY_PLAYERS; p++)
-        for (t = 0; t < COUNTER_TYPE_COUNT; t++)
-            player_counters[p][t] = rand() % 100;
-}
-
 /* random-log fixture lives in sim_stubs.c (shared with the SDL sim) */
 
 /* ---- Main ---- */
@@ -329,10 +287,10 @@ int main(int argc, char *argv[])
     const char *screen_name = "main";
     const char *outdir = "screenshots";
     const char *output_filename = NULL;
-    int life_values[MAX_DISPLAY_PLAYERS] = {0};
-    int life_count = 0;
-    int life_set = 0;
-    char name_values[MAX_GAME_PLAYERS][16] = {{0}};
+    int damage_values[MAX_DISPLAY_PLAYERS] = {0};
+    int damage_count = 0;
+    int damage_set = 0;
+    char name_values[MAX_DISPLAY_PLAYERS][16] = {{0}};
     int names_set = 0;
     int selected_val = -1;
     int selected_set = 0;
@@ -341,21 +299,16 @@ int main(int argc, char *argv[])
     int preview_delta = 0;
     int preview_delta_set = 0;
     int arg_preview_player = -1;
-    int dice_val = 0;
-    int dice_set = 0;
-    int counter_type_val = 2; /* default: poison */
-    int counter_type_set = 0;
-    int counter_value_val = 0;
-    int counter_value_set = 0;
-    int counter_player_val = 0;
-    int counter_delta_val = 0;
-    int counter_delta_set = 0;
-    int enemy_damage_values[MAX_ENEMY_COUNT] = {0};
-    int enemy_damage_set = 0;
-    int damage_delta_val = 0;
-    int damage_delta_set = 0;
-    int all_damage_val = 5;
-    int all_damage_set = 0;
+    int player_hp_values[MAX_DISPLAY_PLAYERS] = {0};
+    int player_hp_count = 0;
+    int initiative_val = -1;
+    int initiative_set = 0;
+    int force_values[MAX_DISPLAY_PLAYERS] = {0};
+    int force_set = 0;
+    int coin_val = 0;
+    int coin_set = 0;
+    int hp_edit_delta_val = 0;
+    int hp_edit_delta_set = 0;
     int menu_player_val = 0;
     int menu_player_set = 0;
     int player_color_values[MAX_DISPLAY_PLAYERS] = {0, 1, 2, 3};
@@ -364,18 +317,11 @@ int main(int argc, char *argv[])
     int player_override_set = 0;
     int brightness_val = 0;
     int brightness_set = 0;
-    int do_random_counters = 0;
     int do_random_log = 0;
     int turn_number_val = 0;
     int turn_number_set = 0;
     uint32_t turn_elapsed_val = 0;
     int turn_elapsed_set = 0;
-    int mana_vals[MANA_COLOR_COUNT] = {0};
-    int mana_set = 0;
-    int mana_sel_val = -1;
-    int mana_sel_set = 0;
-    int mana_delta_val = 0;
-    int mana_delta_set = 0;
     int i;
 
     srand((unsigned int)time(NULL));
@@ -387,18 +333,24 @@ int main(int argc, char *argv[])
             screen_name = argv[++i];
         } else if (strcmp(argv[i], "--print-settings-pages") == 0) {
             print_settings_pages = 1;
-        } else if (strcmp(argv[i], "--life") == 0 && i + 1 < argc) {
-            life_count = parse_csv_ints(argv[++i], life_values, MAX_DISPLAY_PLAYERS);
-            life_set = 1;
+        } else if (strcmp(argv[i], "--damage") == 0 && i + 1 < argc) {
+            damage_count = parse_csv_ints(argv[++i], damage_values, MAX_DISPLAY_PLAYERS);
+            damage_set = 1;
         } else if (strcmp(argv[i], "--names") == 0 && i + 1 < argc) {
-            parse_csv_strings(argv[++i], name_values, MAX_GAME_PLAYERS);
+            parse_csv_strings(argv[++i], name_values, MAX_DISPLAY_PLAYERS);
             names_set = 1;
-        } else if (strcmp(argv[i], "--players") == 0 && i + 1 < argc) {
-            sim_nvs_preset_i8("num_players", (int8_t)atoi(argv[++i]));
         } else if (strcmp(argv[i], "--track") == 0 && i + 1 < argc) {
             sim_nvs_preset_i8("track", (int8_t)atoi(argv[++i]));
-        } else if (strcmp(argv[i], "--starting-life") == 0 && i + 1 < argc) {
-            sim_nvs_preset_i16("life_total", (int16_t)atoi(argv[++i]));
+        } else if (strcmp(argv[i], "--base-hp") == 0 && i + 1 < argc) {
+            sim_nvs_preset_i16("base_hp", (int16_t)atoi(argv[++i]));
+        } else if (strcmp(argv[i], "--player-hp") == 0 && i + 1 < argc) {
+            player_hp_count = parse_csv_ints(argv[++i], player_hp_values, MAX_DISPLAY_PLAYERS);
+        } else if (strcmp(argv[i], "--initiative") == 0 && i + 1 < argc) {
+            initiative_val = atoi(argv[++i]);
+            initiative_set = 1;
+        } else if (strcmp(argv[i], "--force") == 0 && i + 1 < argc) {
+            parse_csv_ints(argv[++i], force_values, MAX_DISPLAY_PLAYERS);
+            force_set = 1;
         } else if (strcmp(argv[i], "--selected") == 0 && i + 1 < argc) {
             selected_val = atoi(argv[++i]);
             selected_set = 1;
@@ -435,29 +387,12 @@ int main(int argc, char *argv[])
             sim_nvs_preset_i8("desel_time", (int8_t)atoi(argv[++i]));
         } else if (strcmp(argv[i], "--auto-eliminate") == 0 && i + 1 < argc) {
             sim_nvs_preset_i8("auto_elim", (int8_t)atoi(argv[++i]));
-        } else if (strcmp(argv[i], "--dice") == 0 && i + 1 < argc) {
-            dice_val = atoi(argv[++i]);
-            dice_set = 1;
-        } else if (strcmp(argv[i], "--counter-type") == 0 && i + 1 < argc) {
-            counter_type_val = atoi(argv[++i]);
-            counter_type_set = 1;
-        } else if (strcmp(argv[i], "--counter-value") == 0 && i + 1 < argc) {
-            counter_value_val = atoi(argv[++i]);
-            counter_value_set = 1;
-        } else if (strcmp(argv[i], "--counter-player") == 0 && i + 1 < argc) {
-            counter_player_val = atoi(argv[++i]);
-        } else if (strcmp(argv[i], "--counter-delta") == 0 && i + 1 < argc) {
-            counter_delta_val = atoi(argv[++i]);
-            counter_delta_set = 1;
-        } else if (strcmp(argv[i], "--enemy-damage") == 0 && i + 1 < argc) {
-            parse_csv_ints(argv[++i], enemy_damage_values, MAX_ENEMY_COUNT);
-            enemy_damage_set = 1;
-        } else if (strcmp(argv[i], "--damage-delta") == 0 && i + 1 < argc) {
-            damage_delta_val = atoi(argv[++i]);
-            damage_delta_set = 1;
-        } else if (strcmp(argv[i], "--all-damage-value") == 0 && i + 1 < argc) {
-            all_damage_val = atoi(argv[++i]);
-            all_damage_set = 1;
+        } else if (strcmp(argv[i], "--coin") == 0 && i + 1 < argc) {
+            coin_val = atoi(argv[++i]);
+            coin_set = 1;
+        } else if (strcmp(argv[i], "--hp-edit-delta") == 0 && i + 1 < argc) {
+            hp_edit_delta_val = atoi(argv[++i]);
+            hp_edit_delta_set = 1;
         } else if (strcmp(argv[i], "--menu-player") == 0 && i + 1 < argc) {
             menu_player_val = atoi(argv[++i]);
             menu_player_set = 1;
@@ -469,8 +404,6 @@ int main(int argc, char *argv[])
             player_override_set = 1;
         } else if (strcmp(argv[i], "--battery-voltage") == 0 && i + 1 < argc) {
             sim_battery_voltage = (float)atof(argv[++i]);
-        } else if (strcmp(argv[i], "--random-counters") == 0) {
-            do_random_counters = 1;
         } else if (strcmp(argv[i], "--random-log") == 0) {
             do_random_log = 1;
         } else if (strcmp(argv[i], "--turn-number") == 0 && i + 1 < argc) {
@@ -479,15 +412,6 @@ int main(int argc, char *argv[])
         } else if (strcmp(argv[i], "--turn-elapsed") == 0 && i + 1 < argc) {
             turn_elapsed_val = (uint32_t)atol(argv[++i]);
             turn_elapsed_set = 1;
-        } else if (strcmp(argv[i], "--mana") == 0 && i + 1 < argc) {
-            parse_csv_ints(argv[++i], mana_vals, MANA_COLOR_COUNT);
-            mana_set = 1;
-        } else if (strcmp(argv[i], "--mana-selected") == 0 && i + 1 < argc) {
-            mana_sel_val = atoi(argv[++i]);
-            mana_sel_set = 1;
-        } else if (strcmp(argv[i], "--mana-delta") == 0 && i + 1 < argc) {
-            mana_delta_val = atoi(argv[++i]);
-            mana_delta_set = 1;
         } else if (strcmp(argv[i], "--outdir") == 0 && i + 1 < argc) {
             outdir = argv[++i];
         } else if (strcmp(argv[i], "--output") == 0 && i + 1 < argc) {
@@ -522,14 +446,22 @@ int main(int argc, char *argv[])
 
     /* Apply RAM-only overrides after navigation */
     #define APPLY_RAM_OVERRIDES() do { \
-        if (life_set) { \
+        for (i = 0; i < player_hp_count && i < MAX_DISPLAY_PLAYERS; i++) \
+            player_base_hp[i] = clamp_base_hp(player_hp_values[i]); \
+        if (damage_set) { \
             /* only override the players the CSV named; a short CSV must \
-               not zero (and auto-eliminate) the rest */ \
-            for (i = 0; i < life_count && i < MAX_DISPLAY_PLAYERS; i++) \
-                player_life[i] = life_values[i]; \
+               not reset the rest */ \
+            for (i = 0; i < damage_count && i < MAX_DISPLAY_PLAYERS; i++) \
+                player_damage[i] = clamp_damage(damage_values[i]); \
+        } \
+        if (initiative_set) \
+            initiative_player = initiative_val; \
+        if (force_set) { \
+            for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) \
+                player_force[i] = (force_values[i] != 0); \
         } \
         if (names_set) { \
-            for (i = 0; i < MAX_GAME_PLAYERS; i++) { \
+            for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) { \
                 if (name_values[i][0]) \
                     snprintf(player_names[i], sizeof(player_names[i]), "%s", name_values[i]); \
             } \
@@ -550,49 +482,24 @@ int main(int argc, char *argv[])
                 if (arg_preview_player < 0) arg_preview_player = 0; \
                 selection_set_single(arg_preview_player); \
             } \
-            pending_life_delta = preview_delta; \
-            life_preview_active = true; \
+            pending_damage_delta = preview_delta; \
+            damage_preview_active = true; \
         } \
         if (brightness_set) { \
             brightness_percent = brightness_val; \
             brightness_apply(); \
         } \
-        if (dice_set) { \
-            dice_result = dice_val; \
-            refresh_dice_ui(); \
-        } \
-        if (counter_type_set || counter_value_set || counter_delta_set) { \
-            if (counter_value_set && \
-                counter_player_val >= 0 && counter_player_val < MAX_DISPLAY_PLAYERS && \
-                counter_type_val >= 0 && counter_type_val < COUNTER_TYPE_COUNT) \
-                player_counters[counter_player_val][counter_type_val] = counter_value_val; \
-            begin_counter_edit(counter_player_val, (counter_type_t)counter_type_val); \
-            if (counter_delta_set) change_counter_edit(counter_delta_val); \
-            refresh_counter_edit_ui(); \
+        if (coin_set) { \
+            coin_result = coin_val; \
+            refresh_coin_ui(); \
         } \
         if (menu_player_set) { \
             menu_player = menu_player_val; \
-            /* The live flow always enters the commander damage picker and \
-               editor via the player menu, which targets the acting player; \
-               mirror that so the enemy rows skip them (and so the menu \
-               faces them when menu facing is on). Runs before the \
-               --enemy-damage override, which seeds the rows explicitly. */ \
-            if (lv_scr_act() == screen_select || lv_scr_act() == screen_damage) \
-                prepare_cmd_damage_for_player(menu_player); \
             menu_facing_refresh(); \
         } \
-        if (enemy_damage_set) { \
-            for (i = 0; i < MAX_ENEMY_COUNT; i++) \
-                enemies[i].damage = enemy_damage_values[i]; \
-            damage_enter(); /* values are committed state, not a pending dial */ \
-            refresh_select_ui(); \
-            refresh_damage_ui(); \
-        } \
-        if (damage_delta_set) \
-            add_damage_to_selected_enemy(damage_delta_val); \
-        if (all_damage_set) { \
-            all_damage_value = all_damage_val; \
-            refresh_all_damage_ui(); \
+        if (lv_scr_act() == screen_hp_edit) { \
+            begin_hp_edit(menu_player); \
+            if (hp_edit_delta_set) change_hp_edit(hp_edit_delta_val); \
         } \
         if (player_colors_set) { \
             for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) \
@@ -602,8 +509,6 @@ int main(int argc, char *argv[])
             for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) \
                 player_has_override[i] = (bool)player_override_values[i]; \
         } \
-        if (do_random_counters) \
-            populate_random_counters(); \
         if (do_random_log) { \
             sim_populate_random_log(); \
             open_damage_log_screen(); \
@@ -618,26 +523,15 @@ int main(int argc, char *argv[])
             else \
                 turn_elapsed_ms = 0; \
         } \
-        if (mana_set) { \
-            for (i = 0; i < MANA_COLOR_COUNT; i++) \
-                mana_values[i] = mana_vals[i]; \
-        } \
-        if (mana_sel_set) \
-            mana_set_selected(mana_sel_val); \
-        if (mana_delta_set && mana_sel_set && mana_sel_val >= 0) { \
-            for (int md = 0; md < (mana_delta_val > 0 ? mana_delta_val : -mana_delta_val); md++) \
-                change_mana_value(mana_delta_val > 0 ? 1 : -1); \
-        } \
         for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) \
             check_player_elimination(i); \
         refresh_main_ui(); \
         lv_obj_update_layout(lv_scr_act()); \
         refresh_multiplayer_ui(); \
-        refresh_select_ui(); \
-        refresh_damage_ui(); \
+        refresh_player_menu_ui(); \
+        refresh_hp_edit_ui(); \
         refresh_settings_ui(); \
         refresh_battery_ui(); \
-        refresh_mana_ui(); \
     } while(0)
 
     {
@@ -660,7 +554,7 @@ int main(int argc, char *argv[])
             return 1;
         }
         /* reset_all_values() (called by the nav_* helpers) kicks off the
-           "pick first player" roulette animation, whose timer would keep
+           random-initiative roulette animation, whose timer would keep
            reassigning the selection while render_frame() advances time.
            Stop it and clear the resulting selection so screenshots are
            deterministic; APPLY_RAM_OVERRIDES then sets any requested state. */

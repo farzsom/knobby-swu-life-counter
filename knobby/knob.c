@@ -3,7 +3,7 @@
 #include "src/storage.h"
 #include "src/game.h"
 #include "src/timer.h"
-#include "src/dice.h"
+#include "src/coin.h"
 #include "src/intro.h"
 #include "src/ui_1p.h"
 #include "src/ui_mp.h"
@@ -12,7 +12,6 @@
 #include "src/game_mode.h"
 #include "src/damage_log.h"
 #include "src/rename.h"
-#include "src/mana.h"
 
 // ---------- swipe state ----------
 static lv_obj_t *previous_screen = NULL;
@@ -324,63 +323,51 @@ static void handle_back_navigation(lv_obj_t *screen)
         lv_scr_load(screen_quad_menu);
     } else if (settings_handle_back(screen)) {
         /* settings pages and their sub-screens (brightness, battery) */
-    } else if (screen == screen_dice) {
+    } else if (screen == screen_coin) {
         lv_scr_load(screen_tools_menu);
     } else if (screen == screen_damage_log) {
         lv_scr_load(screen_tools_menu);
-    } else if (screen == screen_select) {
-        back_to_main();
-    } else if (screen == screen_damage) {
-        damage_cancel();
-        open_select_screen();
     } else if (screen == screen_game_mode_menu) {
         lv_scr_load(screen_quad_menu);
-    } else if (screen == screen_custom_life) {
+    } else if (screen == screen_custom_hp) {
         refresh_game_mode_menu_ui();
         lv_scr_load(screen_game_mode_menu);
     } else if (screen == screen_player_menu) {
         back_to_main();
+    } else if (screen == screen_eliminated_player_menu) {
+        back_to_main();
     } else if (screen == screen_player_name) {
         if (!name_screen_handle_back())
             open_player_menu(menu_player);
-    } else if (screen == screen_counter_menu) {
-        open_player_menu(menu_player);
-    } else if (screen == screen_counter_edit) {
-        open_counter_menu();
-    } else if (screen == screen_player_all_damage) {
+    } else if (screen == screen_hp_edit) {
         open_player_menu(menu_player);
     } else if (screen == screen_player_color_menu) {
         open_player_menu(menu_player);
     } else if (screen == screen_player_color_picker) {
         load_screen_if_needed(screen_player_color_menu);
-    } else if (screen == screen_mana) {
-        mana_discard_preview();
-        lv_scr_load(screen_tools_menu);
     }
 }
 
 // ---------- reset ----------
 void reset_all_values(void)
 {
-    knob_life_reset();
+    game_reset();
 
     brightness_percent = nvs_get_brightness();
     brightness_apply();
 
     turn_timer_reset();
+    coin_result = COIN_NONE;
 
     refresh_main_ui();
-    refresh_select_ui();
-    refresh_damage_ui();
     refresh_settings_ui();
     refresh_multiplayer_ui();
 
     refresh_rename_ui();
-    refresh_all_damage_ui();
-    refresh_counter_edit_ui();
-    mana_clear_all();
+    refresh_coin_ui();
 
-    start_player_selection_animation();
+    if (nvs_get_random_first())
+        start_player_selection_animation();
 }
 
 
@@ -397,10 +384,9 @@ static void menu_facing_screen_event(lv_event_t *e)
 static void menu_facing_hook_screens(void)
 {
     lv_obj_t *scoped[] = {
-        screen_player_menu, screen_eliminated_player_menu,
-        screen_player_all_damage, screen_counter_menu, screen_counter_edit,
+        screen_player_menu, screen_eliminated_player_menu, screen_hp_edit,
         screen_player_color_menu, screen_player_color_picker,
-        screen_player_name, screen_select, screen_damage,
+        screen_player_name,
     };
     size_t i;
 
@@ -424,20 +410,17 @@ void knob_gui(void)
     lv_refr_now(NULL);
     scr_display_on();
     brightness_apply();
-    build_dice_screen();
+    knob_timer_init();
+    game_init();
+    build_coin_screen();
     build_main_screen();
     build_multiplayer_screen();
     build_player_menu_screen();
     build_eliminated_player_menu_screen();
+    build_hp_edit_screen();
     build_rename_screen();
-    build_all_damage_screen();
-    build_counter_menu_screen();
-    build_counter_edit_screen();
     build_player_color_menu_screen();
     build_player_color_picker_screen();
-    build_select_screen();
-    build_damage_screen();
-    build_mana_screen();
     build_settings_screen();
     build_battery_screen();
     build_rotate_screen();
@@ -445,21 +428,15 @@ void knob_gui(void)
     build_damage_log_screen();
     build_quad_menus();
     build_game_mode_menu_screen();
-    build_custom_life_screen();
+    build_custom_hp_screen();
     menu_facing_hook_screens();
 
     refresh_main_ui();
     refresh_multiplayer_ui();
 
     refresh_rename_ui();
-    refresh_select_ui();
-    refresh_damage_ui();
-    refresh_all_damage_ui();
-    refresh_counter_edit_ui();
     refresh_settings_ui();
 
-    knob_timer_init();
-    knob_life_init();
     knob_intro_init();
 }
 
@@ -475,14 +452,10 @@ static void handle_knob_event(knob_event_t k)
     }
     else if (lv_scr_act() == screen_1p)
     {
+        /* Clockwise deals damage to the base, counter-clockwise heals */
         selection_set_single(0);
-        if (k == KNOB_LEFT)      change_player_life(-1);
-        else if (k == KNOB_RIGHT) change_player_life(+1);
-    }
-    else if (lv_scr_act() == screen_damage)
-    {
-        if (k == KNOB_LEFT)      add_damage_to_selected_enemy(-1);
-        else if (k == KNOB_RIGHT) add_damage_to_selected_enemy(+1);
+        if (k == KNOB_LEFT)      change_player_damage(-1);
+        else if (k == KNOB_RIGHT) change_player_damage(+1);
     }
     else if (lv_scr_act() == screen_settings)
     {
@@ -497,24 +470,19 @@ static void handle_knob_event(knob_event_t k)
     }
     else if (lv_scr_act() == screen_multiplayer)
     {
-        if (k == KNOB_LEFT)      change_player_life(-1);
-        else if (k == KNOB_RIGHT) change_player_life(+1);
+        if (k == KNOB_LEFT)      change_player_damage(-1);
+        else if (k == KNOB_RIGHT) change_player_damage(+1);
     }
-    else if (lv_scr_act() == screen_player_all_damage)
+    else if (lv_scr_act() == screen_custom_hp)
     {
-        if (k == KNOB_LEFT)      change_all_damage(-1);
-        else if (k == KNOB_RIGHT) change_all_damage(+1);
+        if (k == KNOB_LEFT)      change_custom_hp(-1);
+        else if (k == KNOB_RIGHT) change_custom_hp(+1);
     }
-    else if (lv_scr_act() == screen_custom_life)
+    else if (lv_scr_act() == screen_hp_edit)
     {
-        if (k == KNOB_LEFT)      change_custom_life(-1);
-        else if (k == KNOB_RIGHT) change_custom_life(+1);
-    }
-    else if (lv_scr_act() == screen_counter_edit)
-    {
-        if (k == KNOB_LEFT)      change_counter_edit(-1);
-        else if (k == KNOB_RIGHT) change_counter_edit(+1);
-        refresh_counter_edit_ui();
+        if (k == KNOB_LEFT)      change_hp_edit(-1);
+        else if (k == KNOB_RIGHT) change_hp_edit(+1);
+        refresh_hp_edit_ui();
     }
     else if (lv_scr_act() == screen_damage_log)
     {
@@ -530,11 +498,6 @@ static void handle_knob_event(knob_event_t k)
     {
         if (k == KNOB_LEFT)      change_player_color(-1);
         else if (k == KNOB_RIGHT) change_player_color(+1);
-    }
-    else if (lv_scr_act() == screen_mana)
-    {
-        if (k == KNOB_LEFT)      change_mana_value(-1);
-        else if (k == KNOB_RIGHT) change_mana_value(+1);
     }
     else if (k == KNOB_LEFT || k == KNOB_RIGHT)
     {

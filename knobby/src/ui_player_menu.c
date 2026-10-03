@@ -1,97 +1,79 @@
 #include "ui_player_menu.h"
-#include "damage_log.h"
 #include "game.h"
 #include "rename.h"
 #include "settings.h"
 #include "storage.h"
 #include "ui_1p.h"
 
+#define TILE_DEFAULT_COLOR    0x1A1A2E
+#define TILE_INITIATIVE_COLOR 0x7A5C00
+#define TILE_FORCE_COLOR      0x0D47A1
+
 // ---------- screens ----------
 lv_obj_t *screen_player_menu = NULL;
-lv_obj_t *screen_player_all_damage = NULL;
-lv_obj_t *screen_counter_menu = NULL;
-lv_obj_t *screen_counter_edit = NULL;
+lv_obj_t *screen_hp_edit = NULL;
 lv_obj_t *screen_eliminated_player_menu = NULL;
 lv_obj_t *screen_player_color_menu = NULL;
 lv_obj_t *screen_player_color_picker = NULL;
 
 // ---------- widgets ----------
-static lv_obj_t *label_all_damage_title = NULL;
-static lv_obj_t *label_all_damage_value = NULL;
-static lv_obj_t *label_all_damage_hint = NULL;
-static lv_obj_t *cb_include_myself = NULL;
-static lv_obj_t *label_counter_edit_title = NULL;
-static lv_obj_t *label_counter_edit_value = NULL;
-static lv_obj_t *label_counter_edit_hint = NULL;
-static lv_obj_t *label_counter_edit_icon = NULL;
-static lv_obj_t *label_counter_edit_delta = NULL;
-
-// ---------- forward declarations ----------
-static void open_all_damage_screen(void);
-static void open_counter_edit_screen(counter_type_t type);
+static lv_obj_t *tile_base_hp = NULL;
+static lv_obj_t *tile_initiative = NULL;
+static lv_obj_t *tile_force = NULL;
+static lv_obj_t *label_hp_edit_title = NULL;
+static lv_obj_t *label_hp_edit_value = NULL;
+static lv_obj_t *label_hp_edit_delta = NULL;
 
 // ---------- refresh ----------
-void refresh_all_damage_ui(void) {
-  char buf[32];
-
-  if (label_all_damage_title != NULL) {
-    bool include_myself = false;
-    if (cb_include_myself != NULL) {
-      include_myself = lv_obj_has_state(cb_include_myself, LV_STATE_CHECKED);
-    }
-    lv_label_set_text(label_all_damage_title, include_myself ? "All players" : "All opponents");
-  }
-
-  if (label_all_damage_value != NULL) {
-    snprintf(buf, sizeof(buf), "Damage: %d", all_damage_value);
-    lv_label_set_text(label_all_damage_value, buf);
-  }
+static void set_tile(lv_obj_t *tile, const char *text, uint32_t color) {
+  if (tile == NULL)
+    return;
+  lv_label_set_text(lv_obj_get_child(tile, 0), text);
+  lv_obj_set_style_bg_color(tile, lv_color_hex(color), 0);
 }
 
-void refresh_counter_edit_ui(void) {
-  char title_buf[48];
-  char value_buf[16];
-  const counter_definition_t *definition =
-      get_counter_definition(counter_edit_type);
+/* The player menu is one screen shared by every player, so its tiles
+   are relabeled for whoever opened it. */
+void refresh_player_menu_ui(void) {
+  char buf[24];
+  bool has_initiative = (initiative_player == menu_player);
+  bool has_force = player_force[menu_player];
 
-  if (definition == NULL)
-    return;
+  snprintf(buf, sizeof(buf), "Base HP\n%d", player_base_hp[menu_player]);
+  set_tile(tile_base_hp, buf, TILE_DEFAULT_COLOR);
+  set_tile(tile_initiative,
+           has_initiative ? "Has\nInitiative" : "Take\nInitiative",
+           has_initiative ? TILE_INITIATIVE_COLOR : TILE_DEFAULT_COLOR);
+  set_tile(tile_force, has_force ? "Force\nON" : "Force\nOFF",
+           has_force ? TILE_FORCE_COLOR : TILE_DEFAULT_COLOR);
+}
 
-  if (label_counter_edit_icon != NULL) {
-    const lv_font_t *icon_font = (counter_edit_type == COUNTER_TYPE_POISON)
-                                     ? &mana_poison_icon_bold_16
-                                     : &mana_counter_icons_16;
-    lv_label_set_text(label_counter_edit_icon,
-                      definition->icon_text ? definition->icon_text : "");
-    lv_obj_set_style_text_font(label_counter_edit_icon, icon_font, 0);
+void refresh_hp_edit_ui(void) {
+  char buf[48];
+  int delta = hp_edit_pending_delta();
+
+  if (label_hp_edit_title != NULL) {
+    snprintf(buf, sizeof(buf), "%s\nBase HP", player_names[menu_player]);
+    lv_label_set_text(label_hp_edit_title, buf);
   }
 
-  if (label_counter_edit_title != NULL) {
-    snprintf(title_buf, sizeof(title_buf), "%s\n%s", player_names[menu_player],
-             definition->display_name);
-    lv_label_set_text(label_counter_edit_title, title_buf);
+  if (label_hp_edit_value != NULL) {
+    snprintf(buf, sizeof(buf), "%d", hp_edit_value);
+    lv_label_set_text(label_hp_edit_value, buf);
   }
 
-  if (label_counter_edit_value != NULL) {
-    snprintf(value_buf, sizeof(value_buf), "%d", counter_edit_value);
-    lv_label_set_text(label_counter_edit_value, value_buf);
-  }
-
-  if (label_counter_edit_delta != NULL) {
-    int delta = counter_edit_pending_delta();
-
+  if (label_hp_edit_delta != NULL) {
     if (delta != 0) {
-      /* Undialed knob delta, annotated above the (already-updated) count:
-         life-screen colors, green up, red down. */
-      snprintf(value_buf, sizeof(value_buf), "%+d", delta);
-      lv_label_set_text(label_counter_edit_delta, value_buf);
-      lv_obj_set_style_text_color(label_counter_edit_delta,
+      /* Undialed knob delta, annotated above the (already-updated) value */
+      snprintf(buf, sizeof(buf), "%+d", delta);
+      lv_label_set_text(label_hp_edit_delta, buf);
+      lv_obj_set_style_text_color(label_hp_edit_delta,
                                   (delta > 0) ? lv_color_hex(0x06D6A0)
                                               : lv_color_hex(0xFF1744),
                                   0);
-      lv_obj_clear_flag(label_counter_edit_delta, LV_OBJ_FLAG_HIDDEN);
+      lv_obj_clear_flag(label_hp_edit_delta, LV_OBJ_FLAG_HIDDEN);
     } else {
-      lv_obj_add_flag(label_counter_edit_delta, LV_OBJ_FLAG_HIDDEN);
+      lv_obj_add_flag(label_hp_edit_delta, LV_OBJ_FLAG_HIDDEN);
     }
   }
 }
@@ -99,27 +81,14 @@ void refresh_counter_edit_ui(void) {
 // ---------- navigation ----------
 void open_player_menu(int player_index) {
   menu_player = player_index;
+  refresh_player_menu_ui();
   load_screen_if_needed(screen_player_menu);
 }
 
-void open_counter_menu(void) { load_screen_if_needed(screen_counter_menu); }
-
-static void open_all_damage_screen(void) {
-  all_damage_value = 0;
-  if (cb_include_myself != NULL) {
-    char cb_buf[64];
-    snprintf(cb_buf, sizeof(cb_buf), "Include myself (%s)", player_names[menu_player]);
-    lv_checkbox_set_text(cb_include_myself, cb_buf);
-    lv_obj_clear_state(cb_include_myself, LV_STATE_CHECKED);
-  }
-  refresh_all_damage_ui();
-  load_screen_if_needed(screen_player_all_damage);
-}
-
-static void open_counter_edit_screen(counter_type_t type) {
-  begin_counter_edit(menu_player, type);
-  refresh_counter_edit_ui();
-  load_screen_if_needed(screen_counter_edit);
+void open_hp_edit_screen(void) {
+  begin_hp_edit(menu_player);
+  refresh_hp_edit_ui();
+  load_screen_if_needed(screen_hp_edit);
 }
 
 // ---------- events ----------
@@ -134,20 +103,21 @@ static void event_menu_rename_all(lv_event_t *e) {
   lv_indev_wait_release(lv_indev_get_act());
 }
 
-static void event_menu_cmd_damage(lv_event_t *e) {
+static void event_menu_base_hp(lv_event_t *e) {
   (void)e;
-  prepare_cmd_damage_for_player(menu_player);
-  open_select_screen();
+  open_hp_edit_screen();
 }
 
-static void event_menu_all_damage(lv_event_t *e) {
+static void event_menu_initiative(lv_event_t *e) {
   (void)e;
-  open_all_damage_screen();
+  toggle_initiative(menu_player);
+  back_to_main();
 }
 
-static void event_menu_counters(lv_event_t *e) {
+static void event_menu_force(lv_event_t *e) {
   (void)e;
-  open_counter_menu();
+  toggle_force(menu_player);
+  back_to_main();
 }
 
 static void event_eliminated_undo(lv_event_t *e) {
@@ -160,63 +130,16 @@ static void event_eliminated_undo(lv_event_t *e) {
   back_to_main();
 }
 
-static void event_menu_eliminate(lv_event_t *e) {
+static void event_menu_concede(lv_event_t *e) {
   (void)e;
   manual_eliminate_player(menu_player);
   back_to_main();
   lv_indev_wait_release(lv_indev_get_act());
 }
 
-static void event_counter_commander_tax(lv_event_t *e) {
+static void event_hp_apply(lv_event_t *e) {
   (void)e;
-  open_counter_edit_screen(COUNTER_TYPE_COMMANDER_TAX);
-}
-
-static void event_counter_partner_tax(lv_event_t *e) {
-  (void)e;
-  open_counter_edit_screen(COUNTER_TYPE_PARTNER_TAX);
-}
-
-static void event_counter_poison(lv_event_t *e) {
-  (void)e;
-  open_counter_edit_screen(COUNTER_TYPE_POISON);
-}
-
-static void event_counter_experience(lv_event_t *e) {
-  (void)e;
-  open_counter_edit_screen(COUNTER_TYPE_EXPERIENCE);
-}
-
-static void event_all_damage_apply(lv_event_t *e) {
-  int i;
-  bool include_myself = false;
-
-  if (cb_include_myself != NULL) {
-    include_myself = lv_obj_has_state(cb_include_myself, LV_STATE_CHECKED);
-  }
-
-  (void)e;
-  for (i = 0; i < nvs_get_players_to_track(); i++) {
-    if (i == menu_player && !include_myself) {
-      continue;
-    }
-    apply_life_delta(i, -all_damage_value);
-  }
-
-  refresh_player_ui();
-  back_to_main();
-}
-
-static void event_checkbox_toggle(lv_event_t *e) {
-  (void)e;
-  refresh_all_damage_ui();
-}
-
-static void event_counter_apply(lv_event_t *e) {
-  (void)e;
-  apply_counter_edit();
-  refresh_counter_edit_ui();
-  refresh_player_ui();
+  apply_hp_edit();
   back_to_main();
 }
 
@@ -236,17 +159,17 @@ static void event_color_default(lv_event_t *e) {
   if (menu_player < 0 || menu_player >= MAX_DISPLAY_PLAYERS)
     return;
   player_has_override[menu_player] = false;
-  player_life_color[menu_player] = false;
+  player_hp_color[menu_player] = false;
   refresh_player_ui();
   back_to_main();
 }
 
-static void event_color_life(lv_event_t *e) {
+static void event_color_hp(lv_event_t *e) {
   (void)e;
   if (menu_player < 0 || menu_player >= MAX_DISPLAY_PLAYERS)
     return;
   player_has_override[menu_player] = true;
-  player_life_color[menu_player] = true;
+  player_hp_color[menu_player] = true;
   refresh_player_ui();
   back_to_main();
 }
@@ -265,7 +188,7 @@ static void event_color_custom(lv_event_t *e) {
   if (color_picker_swatch != NULL)
     lv_obj_set_style_bg_color(
         color_picker_swatch,
-        get_custom_color_vib(color_picker_index, LIFE_VIB_MID), 0);
+        get_custom_color_vib(color_picker_index, VIB_MID), 0);
   if (color_picker_name_label != NULL)
     lv_label_set_text(color_picker_name_label,
                       get_custom_color_name(color_picker_index));
@@ -282,7 +205,7 @@ void change_player_color(int delta) {
   if (color_picker_swatch != NULL)
     lv_obj_set_style_bg_color(
         color_picker_swatch,
-        get_custom_color_vib(color_picker_index, LIFE_VIB_MID), 0);
+        get_custom_color_vib(color_picker_index, VIB_MID), 0);
   if (color_picker_name_label != NULL)
     lv_label_set_text(color_picker_name_label,
                       get_custom_color_name(color_picker_index));
@@ -293,7 +216,7 @@ void commit_player_color(void) {
     return;
   player_has_override[menu_player] = true;
   player_color_index[menu_player] = color_picker_index;
-  player_life_color[menu_player] = false;
+  player_hp_color[menu_player] = false;
   refresh_player_ui();
 }
 
@@ -307,15 +230,18 @@ static void event_color_apply(lv_event_t *e) {
 void build_player_menu_screen(void) {
   quad_item_t items[4] = {
       {"Name/\nColor", event_menu_color, true, LV_EVENT_CLICKED},
-      {"Commander\nDamage", event_menu_cmd_damage, true, LV_EVENT_CLICKED},
-      {"All\nDamage", event_menu_all_damage, true, LV_EVENT_CLICKED},
-      {"Counters", event_menu_counters, true, LV_EVENT_SHORT_CLICKED},
+      {"Base HP\n30", event_menu_base_hp, true, LV_EVENT_SHORT_CLICKED},
+      {"Take\nInitiative", event_menu_initiative, true, LV_EVENT_CLICKED},
+      {"Force\nOFF", event_menu_force, true, LV_EVENT_CLICKED},
   };
   build_quad_screen(&screen_player_menu, items);
 
-  /* Long-press Counters to manually eliminate */
-  lv_obj_t *counters_btn = lv_obj_get_child(screen_player_menu, 3);
-  lv_obj_add_event_cb(counters_btn, event_menu_eliminate, LV_EVENT_LONG_PRESSED,
+  tile_base_hp = lv_obj_get_child(screen_player_menu, 1);
+  tile_initiative = lv_obj_get_child(screen_player_menu, 2);
+  tile_force = lv_obj_get_child(screen_player_menu, 3);
+
+  /* Long-press Base HP to concede (multiplayer only) */
+  lv_obj_add_event_cb(tile_base_hp, event_menu_concede, LV_EVENT_LONG_PRESSED,
                       NULL);
 }
 
@@ -328,149 +254,63 @@ void build_eliminated_player_menu_screen(void) {
                             LV_SCROLLBAR_MODE_OFF);
 
   lv_obj_t *title = lv_label_create(screen_eliminated_player_menu);
-  lv_label_set_text(title, "Undo elimination");
+  lv_label_set_text(title, "Base destroyed");
   lv_obj_set_style_text_color(title, lv_color_white(), 0);
   lv_obj_set_style_text_font(title, &lv_font_montserrat_22, 0);
-  lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 40);
+  lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 50);
 
   lv_obj_t *hint = lv_label_create(screen_eliminated_player_menu);
-  lv_label_set_text(hint, "Restore the action that eliminated this player");
+  lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
+  lv_obj_set_width(hint, 240);
+  lv_label_set_text(hint, "Undo the damage that destroyed this base");
   lv_obj_set_style_text_color(hint, lv_color_hex(0x7A7A7A), 0);
-  lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(hint, &lv_font_montserrat_16, 0);
   lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_align(hint, LV_ALIGN_CENTER, 0, 0);
+  lv_obj_align(hint, LV_ALIGN_CENTER, 0, -6);
 
   lv_obj_t *btn = make_button(screen_eliminated_player_menu, "Undo", 120, 46,
                               event_eliminated_undo);
   lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, 0, -46);
 }
 
-void build_counter_menu_screen(void) {
-  int i;
-  static const counter_type_t types[4] = {
-      COUNTER_TYPE_COMMANDER_TAX,
-      COUNTER_TYPE_PARTNER_TAX,
-      COUNTER_TYPE_POISON,
-      COUNTER_TYPE_EXPERIENCE,
-  };
-  lv_event_cb_t const cbs[4] = {
-      event_counter_commander_tax,
-      event_counter_partner_tax,
-      event_counter_poison,
-      event_counter_experience,
-  };
-  quad_item_t items[4] = {{0}};
-
-  for (i = 0; i < 4; i++) {
-    const counter_definition_t *def = get_counter_definition(types[i]);
-    items[i].label = def->menu_label;
-    items[i].cb = cbs[i];
-    items[i].enabled = true;
-    items[i].event = LV_EVENT_CLICKED;
-    items[i].icon = def->icon_text;
-    items[i].icon_font = (types[i] == COUNTER_TYPE_POISON)
-                             ? &mana_poison_icon_bold_16
-                             : &mana_counter_icons_16;
-  }
-
-  build_quad_screen(&screen_counter_menu, items);
-}
-
-void build_all_damage_screen(void) {
-  screen_player_all_damage = lv_obj_create(NULL);
-  lv_obj_set_size(screen_player_all_damage, 360, 360);
-  lv_obj_set_style_bg_color(screen_player_all_damage, lv_color_black(), 0);
-  lv_obj_set_style_border_width(screen_player_all_damage, 0, 0);
-  lv_obj_set_scrollbar_mode(screen_player_all_damage, LV_SCROLLBAR_MODE_OFF);
-
-  label_all_damage_title = lv_label_create(screen_player_all_damage);
-  lv_obj_set_style_text_color(label_all_damage_title, lv_color_white(), 0);
-  lv_obj_set_style_text_font(label_all_damage_title, &lv_font_montserrat_22, 0);
-  lv_obj_align(label_all_damage_title, LV_ALIGN_TOP_MID, 0, 26);
-
-  label_all_damage_value = lv_label_create(screen_player_all_damage);
-  lv_obj_set_style_text_color(label_all_damage_value, lv_color_white(), 0);
-  lv_obj_set_style_text_font(label_all_damage_value, &lv_font_montserrat_32, 0);
-  lv_obj_align(label_all_damage_value, LV_ALIGN_CENTER, 0, -25);
-
-  label_all_damage_hint = lv_label_create(screen_player_all_damage);
-  lv_label_set_text(label_all_damage_hint, "Turn knob, then apply");
-  lv_obj_set_style_text_color(label_all_damage_hint, lv_color_hex(0x7A7A7A), 0);
-  lv_obj_set_style_text_font(label_all_damage_hint, &lv_font_montserrat_14, 0);
-  lv_obj_align(label_all_damage_hint, LV_ALIGN_CENTER, 0, 15);
-
-  cb_include_myself = lv_checkbox_create(screen_player_all_damage);
-  lv_checkbox_set_text(cb_include_myself, "Include myself");
-  lv_obj_set_style_text_color(cb_include_myself, lv_color_white(), 0);
-  lv_obj_set_style_text_font(cb_include_myself, &lv_font_montserrat_16, 0);
-  
-  // Make the checkbox box larger
-  lv_obj_set_style_width(cb_include_myself, 28, LV_PART_INDICATOR);
-  lv_obj_set_style_height(cb_include_myself, 28, LV_PART_INDICATOR);
-  lv_obj_set_style_text_font(cb_include_myself, &lv_font_montserrat_16, LV_PART_INDICATOR);
-  
-  // Increase click target area by adding padding
-  lv_obj_set_style_pad_all(cb_include_myself, 10, 0);
-  lv_obj_set_style_pad_column(cb_include_myself, 12, 0); // gap between box and text
-  
-  lv_obj_align(cb_include_myself, LV_ALIGN_CENTER, 0, 55);
-  lv_obj_add_event_cb(cb_include_myself, event_checkbox_toggle, LV_EVENT_VALUE_CHANGED, NULL);
-
-  lv_obj_t *btn = make_button(screen_player_all_damage, "Apply", 120, 46,
-                              event_all_damage_apply);
-  lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, 0, -35);
-}
-
-void build_counter_edit_screen(void) {
+void build_hp_edit_screen(void) {
   lv_obj_t *btn;
+  lv_obj_t *hint;
 
-  screen_counter_edit = lv_obj_create(NULL);
-  lv_obj_set_size(screen_counter_edit, 360, 360);
-  lv_obj_set_style_bg_color(screen_counter_edit, lv_color_black(), 0);
-  lv_obj_set_style_border_width(screen_counter_edit, 0, 0);
-  lv_obj_set_scrollbar_mode(screen_counter_edit, LV_SCROLLBAR_MODE_OFF);
+  screen_hp_edit = lv_obj_create(NULL);
+  lv_obj_set_size(screen_hp_edit, 360, 360);
+  lv_obj_set_style_bg_color(screen_hp_edit, lv_color_black(), 0);
+  lv_obj_set_style_border_width(screen_hp_edit, 0, 0);
+  lv_obj_set_scrollbar_mode(screen_hp_edit, LV_SCROLLBAR_MODE_OFF);
 
-  label_counter_edit_icon = lv_label_create(screen_counter_edit);
-  lv_label_set_text(label_counter_edit_icon, "");
-  lv_obj_set_style_text_color(label_counter_edit_icon, lv_color_white(), 0);
-  lv_obj_set_style_text_font(label_counter_edit_icon, &mana_counter_icons_16,
-                             0);
-  lv_obj_align(label_counter_edit_icon, LV_ALIGN_TOP_MID, 0, 12);
+  label_hp_edit_title = lv_label_create(screen_hp_edit);
+  lv_label_set_text(label_hp_edit_title, "P1\nBase HP");
+  lv_obj_set_style_text_color(label_hp_edit_title, lv_color_white(), 0);
+  lv_obj_set_style_text_font(label_hp_edit_title, &lv_font_montserrat_22, 0);
+  lv_obj_set_style_text_align(label_hp_edit_title, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align(label_hp_edit_title, LV_ALIGN_TOP_MID, 0, 36);
 
-  label_counter_edit_title = lv_label_create(screen_counter_edit);
-  lv_label_set_text(label_counter_edit_title, "P1\nCommander Tax");
-  lv_obj_set_style_text_color(label_counter_edit_title, lv_color_white(), 0);
-  lv_obj_set_style_text_font(label_counter_edit_title, &lv_font_montserrat_22,
-                             0);
-  lv_obj_set_style_text_align(label_counter_edit_title, LV_TEXT_ALIGN_CENTER,
-                              0);
-  lv_obj_align(label_counter_edit_title, LV_ALIGN_TOP_MID, 0, 42);
+  label_hp_edit_value = lv_label_create(screen_hp_edit);
+  lv_label_set_text(label_hp_edit_value, "30");
+  lv_obj_set_style_text_color(label_hp_edit_value, lv_color_white(), 0);
+  lv_obj_set_style_text_font(label_hp_edit_value, &lv_font_montserrat_bold_56, 0);
+  lv_obj_align(label_hp_edit_value, LV_ALIGN_CENTER, 0, 6);
 
-  label_counter_edit_value = lv_label_create(screen_counter_edit);
-  lv_label_set_text(label_counter_edit_value, "0");
-  lv_obj_set_style_text_color(label_counter_edit_value, lv_color_white(), 0);
-  lv_obj_set_style_text_font(label_counter_edit_value, &lv_font_montserrat_32,
-                             0);
-  lv_obj_align(label_counter_edit_value, LV_ALIGN_CENTER, 0, -4);
+  /* Pending knob delta, annotated above the running value */
+  label_hp_edit_delta = lv_label_create(screen_hp_edit);
+  lv_label_set_text(label_hp_edit_delta, "");
+  lv_obj_set_style_text_color(label_hp_edit_delta, lv_color_white(), 0);
+  lv_obj_set_style_text_font(label_hp_edit_delta, &lv_font_montserrat_22, 0);
+  lv_obj_align(label_hp_edit_delta, LV_ALIGN_CENTER, 0, -38);
+  lv_obj_add_flag(label_hp_edit_delta, LV_OBJ_FLAG_HIDDEN);
 
-  label_counter_edit_hint = lv_label_create(screen_counter_edit);
-  lv_label_set_text(label_counter_edit_hint, "Turn knob, then apply");
-  lv_obj_set_style_text_color(label_counter_edit_hint, lv_color_hex(0x7A7A7A),
-                              0);
-  lv_obj_set_style_text_font(label_counter_edit_hint, &lv_font_montserrat_14,
-                             0);
-  lv_obj_align(label_counter_edit_hint, LV_ALIGN_CENTER, 0, 34);
+  hint = lv_label_create(screen_hp_edit);
+  lv_label_set_text(hint, "Turn knob, then apply");
+  lv_obj_set_style_text_color(hint, lv_color_hex(0x7A7A7A), 0);
+  lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
+  lv_obj_align(hint, LV_ALIGN_CENTER, 0, 54);
 
-  /* Pending knob delta, annotated above the running count */
-  label_counter_edit_delta = lv_label_create(screen_counter_edit);
-  lv_label_set_text(label_counter_edit_delta, "");
-  lv_obj_set_style_text_color(label_counter_edit_delta, lv_color_white(), 0);
-  lv_obj_set_style_text_font(label_counter_edit_delta, &lv_font_montserrat_32,
-                             0);
-  lv_obj_align(label_counter_edit_delta, LV_ALIGN_CENTER, 0, -44);
-  lv_obj_add_flag(label_counter_edit_delta, LV_OBJ_FLAG_HIDDEN);
-
-  btn = make_button(screen_counter_edit, "Apply", 120, 46, event_counter_apply);
+  btn = make_button(screen_hp_edit, "Apply", 120, 46, event_hp_apply);
   lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, 0, -46);
 }
 
@@ -479,7 +319,7 @@ void build_player_color_menu_screen(void) {
   quad_item_t items[4] = {
       {"Rename", event_menu_rename, true, LV_EVENT_SHORT_CLICKED},
       {"Default\nSetting", event_color_default, true, LV_EVENT_CLICKED},
-      {"Life\nColor", event_color_life, true, LV_EVENT_CLICKED},
+      {"HP\nColor", event_color_hp, true, LV_EVENT_CLICKED},
       {"Custom\nColor", event_color_custom, true, LV_EVENT_CLICKED},
   };
   build_quad_screen(&screen_player_color_menu, items);
@@ -515,7 +355,7 @@ void build_player_color_picker_screen(void) {
   lv_obj_set_style_radius(color_picker_swatch, 12, 0);
   lv_obj_set_style_bg_opa(color_picker_swatch, LV_OPA_COVER, 0);
   lv_obj_set_style_bg_color(color_picker_swatch,
-                            get_custom_color_vib(0, LIFE_VIB_MID), 0);
+                            get_custom_color_vib(0, VIB_MID), 0);
   lv_obj_clear_flag(color_picker_swatch,
                     LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
 

@@ -3,6 +3,10 @@
 #include "nvs.h"
 #include <string.h>
 
+/* Separate from the MTG firmware's "knobby" namespace, so flashing over
+   it never picks up life-counter settings. */
+#define NVS_NAMESPACE "knobby_swu"
+
 // ---------- cached state ----------
 static bool settings_dirty = false;
 static int cached_brightness = DEFAULT_BRIGHTNESS_PERCENT;
@@ -12,11 +16,13 @@ static int cached_deselect_timeout = 0; /* index: 0=never, 1=5s, 2=15s, 3=30s */
 static int cached_orientation = ORIENTATION_MODE_ABSOLUTE;
 static int cached_display_rotation = 0; /* physical rotation, degrees = value * 90 */
 static int cached_menu_facing = 0; /* 0=Fixed (default), 1=Face Player */
-static int cached_num_players = 4;
-static int cached_players_to_track = 1;
-static int cached_life_total = DEFAULT_LIFE_TOTAL;
+static int cached_players_to_track = DEFAULT_PLAYERS_TO_TRACK;
+static int cached_base_hp = DEFAULT_BASE_HP; /* default for new players and Game Mode */
+static int8_t cached_player_base_hp[MAX_DISPLAY_PLAYERS] = {
+    DEFAULT_BASE_HP, DEFAULT_BASE_HP, DEFAULT_BASE_HP, DEFAULT_BASE_HP
+};
 static int cached_auto_eliminate = 1; /* 1=ON (default), 0=OFF */
-static int cached_random_first = 1; /* 1=ON (default): random first-player pick on reset */
+static int cached_random_first = 1; /* 1=ON (default): random initiative pick on reset */
 static int cached_multi_select = 0; /* 0=OFF (default), 1=ON */
 static char cached_name_list[NAME_LIST_COUNT][NAME_LIST_LEN];
 
@@ -30,16 +36,15 @@ void knob_nvs_init(void)
     }
 
     nvs_handle_t handle;
-    if (nvs_open("knobby", NVS_READONLY, &handle) == ESP_OK) {
+    if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle) == ESP_OK) {
         int8_t dim_val = 0;
         int8_t bri_val = DEFAULT_BRIGHTNESS_PERCENT;
         int8_t lc_val = 0;
         int8_t dt_val = 0;
         int8_t rot_val = 0;
         int8_t dr_val = 0;
-        int8_t np_val = 4;
-        int8_t pt_val = 1;
-        int16_t lt_val = DEFAULT_LIFE_TOTAL;
+        int8_t pt_val = DEFAULT_PLAYERS_TO_TRACK;
+        int16_t hp_val = DEFAULT_BASE_HP;
 
         nvs_get_i8(handle, "auto_dim", &dim_val);
         nvs_get_i8(handle, "brightness", &bri_val);
@@ -47,9 +52,8 @@ void knob_nvs_init(void)
         nvs_get_i8(handle, "desel_time", &dt_val);
         nvs_get_i8(handle, "rotation", &rot_val);
         nvs_get_i8(handle, "disp_rot", &dr_val);
-        nvs_get_i8(handle, "num_players", &np_val);
         nvs_get_i8(handle, "track", &pt_val);
-        nvs_get_i16(handle, "life_total", &lt_val);
+        nvs_get_i16(handle, "base_hp", &hp_val);
 
         cached_auto_dim = (dim_val < 0) ? AUTO_DIM_OFF : (dim_val >= AUTO_DIM_COUNT) ? AUTO_DIM_OFF : dim_val;
         cached_color_mode = (lc_val < 0) ? COLOR_MODE_PLAYER : (lc_val >= COLOR_MODE_COUNT) ? COLOR_MODE_PLAYER : lc_val;
@@ -59,13 +63,15 @@ void knob_nvs_init(void)
                                    : rot_val;
         cached_display_rotation = (dr_val < 0 || dr_val >= DISPLAY_ROTATION_COUNT) ? 0 : dr_val;
         cached_brightness = clamp_brightness(bri_val);
-        cached_num_players = (np_val < 1) ? 1 : (np_val > MAX_GAME_PLAYERS) ? MAX_GAME_PLAYERS : np_val;
         cached_players_to_track = (pt_val < 1) ? 1 : (pt_val > MAX_DISPLAY_PLAYERS) ? MAX_DISPLAY_PLAYERS : pt_val;
-        /* Every consumer assumes track <= num_players; foreign/old NVS could
-           store an inconsistent pair that the per-field clamps above allow. */
-        if (cached_players_to_track > cached_num_players)
-            cached_players_to_track = cached_num_players;
-        cached_life_total = (lt_val < 1) ? 1 : (lt_val > LIFE_MAX) ? LIFE_MAX : lt_val;
+        cached_base_hp = clamp_base_hp(hp_val);
+        for (int i = 0; i < MAX_DISPLAY_PLAYERS; i++)
+            cached_player_base_hp[i] = (int8_t)cached_base_hp;
+
+        size_t php_size = sizeof(cached_player_base_hp);
+        nvs_get_blob(handle, "player_hp", cached_player_base_hp, &php_size);
+        for (int i = 0; i < MAX_DISPLAY_PLAYERS; i++)
+            cached_player_base_hp[i] = (int8_t)clamp_base_hp(cached_player_base_hp[i]);
 
         int8_t ae_val = 1;
         nvs_get_i8(handle, "auto_elim", &ae_val);
@@ -175,17 +181,6 @@ void nvs_set_menu_facing(int value)
 }
 
 // ---------- game mode getters/setters ----------
-int nvs_get_num_players(void)
-{
-    return cached_num_players;
-}
-
-void nvs_set_num_players(int value)
-{
-    cached_num_players = (value < 1) ? 1 : (value > MAX_GAME_PLAYERS) ? MAX_GAME_PLAYERS : value;
-    settings_dirty = true;
-}
-
 int nvs_get_players_to_track(void)
 {
     return cached_players_to_track;
@@ -197,14 +192,28 @@ void nvs_set_players_to_track(int value)
     settings_dirty = true;
 }
 
-int nvs_get_life_total(void)
+int nvs_get_base_hp(void)
 {
-    return cached_life_total;
+    return cached_base_hp;
 }
 
-void nvs_set_life_total(int value)
+void nvs_set_base_hp(int value)
 {
-    cached_life_total = (value < 1) ? 1 : (value > LIFE_MAX) ? LIFE_MAX : value;
+    cached_base_hp = clamp_base_hp(value);
+    settings_dirty = true;
+}
+
+// ---------- per-player base HP ----------
+int nvs_get_player_base_hp(int player)
+{
+    if (player < 0 || player >= MAX_DISPLAY_PLAYERS) return cached_base_hp;
+    return cached_player_base_hp[player];
+}
+
+void nvs_set_player_base_hp(int player, int value)
+{
+    if (player < 0 || player >= MAX_DISPLAY_PLAYERS) return;
+    cached_player_base_hp[player] = (int8_t)clamp_base_hp(value);
     settings_dirty = true;
 }
 
@@ -261,16 +270,16 @@ void settings_save(void)
 {
     if (!settings_dirty) return;
     nvs_handle_t handle;
-    if (nvs_open("knobby", NVS_READWRITE, &handle) == ESP_OK) {
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
         nvs_set_i8(handle, "auto_dim", (int8_t)cached_auto_dim);
         nvs_set_i8(handle, "brightness", (int8_t)cached_brightness);
         nvs_set_i8(handle, "color_mode", (int8_t)cached_color_mode);
         nvs_set_i8(handle, "desel_time", (int8_t)cached_deselect_timeout);
         nvs_set_i8(handle, "rotation", (int8_t)cached_orientation);
         nvs_set_i8(handle, "disp_rot", (int8_t)cached_display_rotation);
-        nvs_set_i8(handle, "num_players", (int8_t)cached_num_players);
         nvs_set_i8(handle, "track", (int8_t)cached_players_to_track);
-        nvs_set_i16(handle, "life_total", (int16_t)cached_life_total);
+        nvs_set_i16(handle, "base_hp", (int16_t)cached_base_hp);
+        nvs_set_blob(handle, "player_hp", cached_player_base_hp, sizeof(cached_player_base_hp));
         nvs_set_i8(handle, "auto_elim", (int8_t)cached_auto_eliminate);
         nvs_set_i8(handle, "rand_first", (int8_t)cached_random_first);
         nvs_set_i8(handle, "multi_sel", (int8_t)cached_multi_select);

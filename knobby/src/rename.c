@@ -91,8 +91,6 @@ static void rename_all_advance(void)
         open_rename_screen();
     } else {
         rename_all_active = false;
-        refresh_select_ui();
-        refresh_damage_ui();
         back_to_main();
     }
 }
@@ -117,8 +115,6 @@ static void apply_name_and_return(const char *name)
         rename_all_advance();
     } else {
         refresh_rename_ui();
-        refresh_select_ui();
-        refresh_damage_ui();
         open_player_menu(menu_player);
     }
 }
@@ -143,8 +139,6 @@ static void event_name_save(lv_event_t *e)
             rename_all_advance();
         } else {
             refresh_rename_ui();
-            refresh_select_ui();
-            refresh_damage_ui();
             open_player_menu(menu_player);
         }
     } else {
@@ -364,7 +358,7 @@ void open_rename_all_screen(void)
 {
     rename_all_active = true;
     rename_all_start = menu_player;
-    rename_all_count = nvs_get_num_players();
+    rename_all_count = nvs_get_players_to_track();
     rename_all_done = 0;
     open_rename_screen();
 }

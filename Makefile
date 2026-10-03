@@ -1,4 +1,4 @@
-# Knobby MTG Life Counter
+# Knobby SWU Base Counter
 # Top-level Makefile for firmware and simulator targets
 
 -include config.mk
@@ -15,7 +15,7 @@ EXTRA_URLS  := https://espressif.github.io/arduino-esp32/package_esp32_index.jso
         screenshot generate-matrix sim sim-gui sim-clean clean
 
 help:
-	@echo "Knobby MTG Life Counter"
+	@echo "Knobby SWU Base Counter"
 	@echo ""
 	@echo "Firmware (via arduino-cli):"
 	@echo "  make firmware-deps                 - Install Arduino cores and libraries"
@@ -80,8 +80,8 @@ sim-web-build:
 	$(MAKE) -C sim web
 
 sim-web-run:
-	@echo "[INFO] Avvio server web locale..."
-	@echo "[INFO] Premi Ctrl+C per fermare il server."
+	@echo "[INFO] Starting local web server..."
+	@echo "[INFO] Press Ctrl+C to stop the server."
 	$(PYTHON) -m http.server 8000 --directory .
 
 screenshot:

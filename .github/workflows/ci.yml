@@ -1,8 +1,7 @@
 name: CI
 
-on: 
-  push:
-    branches: [ main ]
+# Pushes to main build in "Build and Publish", so CI covers pull requests.
+on:
   pull_request:
     branches: [ main ]
 
@@ -22,7 +21,7 @@ jobs:
           path: |
             ~/.arduino15/packages
             ~/Arduino/libraries
-          key: ${{ runner.os }}-arduino-deps-${{ hashFiles('README.md') }}
+          key: ${{ runner.os }}-arduino-deps-${{ hashFiles('Makefile') }}
           restore-keys: |
             ${{ runner.os }}-arduino-deps-
 

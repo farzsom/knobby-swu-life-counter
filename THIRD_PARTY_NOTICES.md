@@ -1,14 +1,7 @@
 ## Third-Party Notices
 
-This repository includes a generated icon font subset in [knobby/mana_counter_icons_16.c](knobby/mana_counter_icons_16.c).
+- **Montserrat** fonts in [knobby/src/fonts](knobby/src/fonts) are licensed under the SIL Open Font License 1.1 (see [OFL.txt](knobby/src/fonts/OFL.txt)).
+- **LVGL**, **ESP32_Display_Panel**, **ESP32_IO_Expander** and **esp-lib-utils** are installed as Arduino libraries at build time and keep their own licenses.
+- **ESP Web Tools** powers the web installer and is loaded from unpkg at install time.
 
-Source:
-- Mana by Andrew Gioia: https://github.com/andrewgioia/mana
-- Keyrune by Andrew Gioia: https://github.com/andrewgioia/keyrune
-
-Upstream licensing summary from Mana:
-- All mana and card symbol images are copyright Wizards of the Coast.
-- The Mana font is licensed under SIL OFL 1.1.
-- Mana CSS, LESS, and Sass files are licensed under MIT.
-
-This repository vendors only a generated, reduced LVGL font subset for firmware use.
+Star Wars and Star Wars: Unlimited belong to their respective owners. This is an unofficial fan project and uses no official artwork, logos or card text.

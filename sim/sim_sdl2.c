@@ -161,8 +161,6 @@ int main(int argc, char *argv[])
 
     knob_gui();
 
-    // Set some defaults if needed
-    nvs_set_players_to_track(4);
     if (do_random_log) sim_populate_random_log();
     back_to_main();
 

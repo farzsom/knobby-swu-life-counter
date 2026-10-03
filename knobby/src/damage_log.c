@@ -4,10 +4,8 @@
 // ---------- data ----------
 typedef struct {
     uint32_t timestamp_ms;
-    int8_t   player;       // target player index, 0..MAX_GAME_PLAYERS-1
-    int8_t   source;       // source for cmd damage or counter type, -1 if N/A
-    uint8_t  event_type;   // log_event_type_t
-    int16_t  delta;
+    int8_t   player;       // player index, 0..MAX_DISPLAY_PLAYERS-1
+    int16_t  delta;        // damage dealt (> 0) or healed (< 0)
 } damage_log_entry_t;
 
 static damage_log_entry_t damage_log[DAMAGE_LOG_MAX];
@@ -29,13 +27,11 @@ static int damage_log_page = 0;       // rendered page, derived from selection
 static lv_style_t log_label_style;    // shared by all entry labels
 
 // ---------- log operations ----------
-void damage_log_add(int player, int delta, uint8_t event_type, int source)
+void damage_log_add(int player, int delta)
 {
     if (delta == 0) return;
     damage_log[damage_log_head].timestamp_ms = lv_tick_get();
     damage_log[damage_log_head].player     = (int8_t)player;
-    damage_log[damage_log_head].source     = (int8_t)source;
-    damage_log[damage_log_head].event_type = event_type;
     damage_log[damage_log_head].delta      = (int16_t)delta;
     damage_log_head = (damage_log_head + 1) % DAMAGE_LOG_MAX;
     if (damage_log_count < DAMAGE_LOG_MAX) damage_log_count++;
@@ -47,15 +43,14 @@ void damage_log_reset(void)
     damage_log_head = 0;
 }
 
-/* Remove the newest entry matching player + event_type (used by elimination
-   undo so the eliminating event can't also be undone from the log). */
-void damage_log_remove_last_for(int player, uint8_t event_type)
+/* Remove the newest entry for a player (used by elimination undo so the
+   destroying event can't also be undone from the log). */
+void damage_log_remove_last_for(int player)
 {
     int i, j;
     for (i = 0; i < damage_log_count; i++) {
         int idx = (damage_log_head - 1 - i + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
-        if (damage_log[idx].player == player &&
-            damage_log[idx].event_type == event_type) {
+        if (damage_log[idx].player == player) {
             for (j = i; j > 0; j--) {
                 int dst = (damage_log_head - 1 - j + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
                 int src = (damage_log_head - j + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
@@ -107,14 +102,7 @@ void damage_log_undo_selected(void)
     buf_idx = (damage_log_head - 1 - damage_log_selected + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
     entry = &damage_log[buf_idx];
 
-    if (entry->event_type == LOG_EVT_LIFE) {
-        undo_life_change(entry->player, entry->delta);
-    } else if (entry->event_type == LOG_EVT_CMD_DAMAGE) {
-        undo_life_change(entry->player, entry->delta);
-        undo_cmd_damage(entry->source, entry->player, entry->delta);
-    } else if (entry->event_type == LOG_EVT_COUNTER) {
-        undo_counter_change(entry->player, entry->source, entry->delta);
-    }
+    undo_damage_change(entry->player, entry->delta);
 
     /* Remove entry by shifting newer entries down */
     for (i = damage_log_selected; i > 0; i--) {
@@ -154,29 +142,13 @@ static void format_log_line(damage_log_entry_t *entry, char *buf, size_t buf_sz)
     buf[0] = '\0';  /* ensure a defined string if no branch below matches */
     format_elapsed(elapsed_s, time_str, sizeof(time_str));
 
-    if (entry->event_type == LOG_EVT_CMD_DAMAGE && entry->source >= 0 &&
-        entry->source < MAX_GAME_PLAYERS && entry->player >= 0 &&
-        entry->player < MAX_GAME_PLAYERS) {
-        snprintf(buf, buf_sz, "%s: %s dealt %d cmd to %s",
-                 time_str,
-                 player_names[entry->source],
-                 abs_delta,
-                 player_names[entry->player]);
-    } else if (entry->event_type == LOG_EVT_COUNTER && entry->source >= 0 &&
-               entry->player >= 0 && entry->player < MAX_GAME_PLAYERS) {
-        const counter_definition_t *definition = get_counter_definition((counter_type_t)entry->source);
-        const char *action = entry->delta > 0 ? "increased" : "decreased";
-        const char *counter_name = (definition != NULL) ? definition->display_name : "Counter";
-        snprintf(buf, buf_sz, "%s: %s %s %s by %d",
-                 time_str,
-                 player_names[entry->player],
-                 action,
-                 counter_name,
-                 abs_delta);
-    } else if (entry->player >= 0 && entry->player < MAX_GAME_PLAYERS) {
-        const char *action = entry->delta > 0 ? "gained" : "lost";
-        snprintf(buf, buf_sz, "%s: %s %s %d life",
-                 time_str, player_names[entry->player], action, abs_delta);
+    if (entry->player < 0 || entry->player >= MAX_DISPLAY_PLAYERS) return;
+    if (entry->delta > 0) {
+        snprintf(buf, buf_sz, "%s: %s took %d damage",
+                 time_str, player_names[entry->player], abs_delta);
+    } else {
+        snprintf(buf, buf_sz, "%s: %s healed %d",
+                 time_str, player_names[entry->player], abs_delta);
     }
 }
 
@@ -263,14 +235,8 @@ static void refresh_damage_log_ui(void)
         lv_label_set_text(lbl, buf);
         lv_obj_set_width(lbl, 280);
         lv_obj_add_style(lbl, &log_label_style, 0);
-        if (damage_log[idx].event_type == LOG_EVT_COUNTER) {
-            const counter_definition_t *definition = get_counter_definition((counter_type_t)damage_log[idx].source);
-            lv_obj_set_style_text_color(lbl,
-                definition != NULL ? lv_color_hex(definition->accent_color) : lv_color_hex(0xFFB74D), 0);
-        } else {
-            lv_obj_set_style_text_color(lbl,
-                damage_log[idx].delta > 0 ? lv_color_hex(0x4CAF50) : lv_color_hex(0xFF5252), 0);
-        }
+        lv_obj_set_style_text_color(lbl,
+            damage_log[idx].delta > 0 ? lv_color_hex(0xFF5252) : lv_color_hex(0x4CAF50), 0);
     }
 
     if (page_label != NULL) {

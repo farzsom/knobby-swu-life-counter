@@ -26,7 +26,7 @@ extern "C" {
 #include "src/net_sync.h"
 }
 
-#define KNOBBY_NET_MAGIC   0x4B4E4259u /* "KNBY": filters foreign ESP-NOW traffic */
+#define KNOBBY_NET_MAGIC   0x4B535755u /* "KSWU": filters foreign ESP-NOW traffic, including MTG Knobbys */
 /* Protocol version: an identifier, not a counter — receivers check
    strict equality and drop everything else, so bump it on ANY breaking
    wire-format change. 0 is invalid (an all-zero packet must never

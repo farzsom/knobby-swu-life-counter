@@ -22,12 +22,12 @@ void nvs_set_display_rotation(int value);
 int nvs_get_menu_facing(void);
 void nvs_set_menu_facing(int value);
 
-int nvs_get_num_players(void);
-void nvs_set_num_players(int value);
 int nvs_get_players_to_track(void);
 void nvs_set_players_to_track(int value);
-int nvs_get_life_total(void);
-void nvs_set_life_total(int value);
+int nvs_get_base_hp(void);
+void nvs_set_base_hp(int value);
+int nvs_get_player_base_hp(int player);
+void nvs_set_player_base_hp(int player, int value);
 
 int nvs_get_auto_eliminate(void);
 void nvs_set_auto_eliminate(int value);

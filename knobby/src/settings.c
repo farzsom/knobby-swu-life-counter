@@ -2,13 +2,12 @@
 #include "hw.h"
 #include "storage.h"
 #include <string.h>
-#include "dice.h"
+#include "coin.h"
 #include "timer.h"
 #include "game_mode.h"
 #include "damage_log.h"
 #include "rename.h"
 #include "game.h"
-#include "mana.h"
 #include "net_sync.h"
 #include "ui_1p.h"
 #include "ui_mp.h"
@@ -187,7 +186,7 @@ static uint32_t orientation_color(int mode)
 
 static uint32_t color_mode_color(int mode)
 {
-    return (mode == COLOR_MODE_LIFE) ? 0x4A148C : 0x0D47A1; /* purple / blue */
+    return (mode == COLOR_MODE_HP) ? 0x4A148C : 0x0D47A1; /* purple / blue */
 }
 
 static uint32_t deselect_color(int index)
@@ -217,7 +216,7 @@ static const char *autodim_label(int index)
 static const char *color_mode_label(int mode)
 {
     switch (mode) {
-        case COLOR_MODE_LIFE:   return "Colors\nLife";
+        case COLOR_MODE_HP:     return "Colors\nHP";
         default:                return "Colors\nPlayer";
     }
 }
@@ -292,22 +291,16 @@ void change_display_rotation(int dir)
 }
 
 /* Player-scoped menu screens that should face the acting player when
-   menu facing is enabled. screen_select/screen_damage are the commander
-   damage picker and editor: player-scoped in multiplayer (opened from the
-   player menu, which sets cmd_damage_target), and a no-op in 1-player
-   since mp_player_seat_rotation() returns 0 there. */
+   menu facing is enabled. A no-op in 1-player, since
+   mp_player_seat_rotation() returns 0 there. */
 static bool screen_is_player_menu(lv_obj_t *screen)
 {
     return screen == screen_player_menu ||
            screen == screen_eliminated_player_menu ||
-           screen == screen_player_all_damage ||
-           screen == screen_counter_menu ||
-           screen == screen_counter_edit ||
+           screen == screen_hp_edit ||
            screen == screen_player_color_menu ||
            screen == screen_player_color_picker ||
-           screen == screen_player_name ||
-           screen == screen_select ||
-           screen == screen_damage;
+           screen == screen_player_name;
 }
 
 /* Single applier for the effective display rotation: the user's physical
@@ -330,11 +323,6 @@ void menu_facing_refresh(void)
     lv_refr_now(NULL);
 }
 
-static const char *random_first_label(int val)
-{
-    return val ? "Random\nFirst\nON" : "Random\nFirst\nOFF";
-}
-
 static const char *menu_facing_label(int val)
 {
     return val ? "Menus\nFace\nPlayer" : "Menus\nFixed";
@@ -350,7 +338,7 @@ static void multi_select_set(int v)
     nvs_set_multi_select(v);
     if (v == 0) {
         /* Turning multi-select off: drop any lingering multi-selection so the
-           single-select rules apply cleanly on return to the life screen. */
+           single-select rules apply cleanly on return to the damage screen. */
         selection_clear();
     }
 }
@@ -480,7 +468,6 @@ static const setting_item_t settings_items[] = {
     { .id = "deselect",       .label = deselect_label,         .color = deselect_color,    .get = nvs_get_deselect_timeout, .set = nvs_set_deselect_timeout, .count = DESELECT_COUNT },
     { .id = "orientation",    .label = orientation_mode_label, .color = orientation_color, .get = nvs_get_orientation,      .set = nvs_set_orientation,      .count = ORIENTATION_MODE_COUNT },
     { .id = "auto-eliminate", .label = auto_eliminate_label,   .color = toggle_color,      .get = nvs_get_auto_eliminate,   .set = nvs_set_auto_eliminate,   .count = 2 },
-    { .id = "random-first",   .label = random_first_label,     .color = toggle_color,      .get = nvs_get_random_first,     .set = nvs_set_random_first,     .count = 2 },
     { .id = "multi-select",   .label = multi_select_label,     .color = toggle_color,      .get = nvs_get_multi_select,     .set = multi_select_set,         .count = 2 },
     { .id = "table-sync",     .fixed_label = "Table Sync\n(Experimental)", .navigate = open_table_sync_screen, .nav_screen = &screen_table_sync },
     { .id = "rotate",         .fixed_label = "Rotate\nScreen", .navigate = open_rotate_screen, .nav_screen = &screen_rotate },
@@ -636,6 +623,19 @@ static void event_open_damage_log(lv_event_t *e)
     open_damage_log_screen();
 }
 
+/* Spin the roulette to hand someone the initiative. A single tracked
+   player has nobody to pick between, so it flips a coin instead. */
+static void event_tool_pick_first(lv_event_t *e)
+{
+    (void)e;
+    if (nvs_get_players_to_track() <= 1) {
+        open_coin_screen();
+        return;
+    }
+    back_to_main();
+    start_player_selection_animation();
+}
+
 static void event_general_reset(lv_event_t *e)
 {
     (void)e;
@@ -656,10 +656,10 @@ void build_quad_menus(void)
     build_quad_screen(&screen_quad_menu, main_items);
 
     quad_item_t tools_items[4] = {
-        {"Dice",        event_tool_dice, true, LV_EVENT_CLICKED},
-        {"Timer",       event_tool_timer, true, LV_EVENT_CLICKED},
-        {"Event\nLog",  event_open_damage_log, true, LV_EVENT_CLICKED},
-        {"Mana\nPool",  event_tool_mana, true, LV_EVENT_CLICKED},
+        {"Coin\nFlip",    event_tool_coin, true, LV_EVENT_CLICKED},
+        {"Round\nTimer",  event_tool_timer, true, LV_EVENT_CLICKED},
+        {"Event\nLog",    event_open_damage_log, true, LV_EVENT_CLICKED},
+        {"Pick\nFirst",   event_tool_pick_first, true, LV_EVENT_CLICKED},
     };
     build_quad_screen(&screen_tools_menu, tools_items);
 

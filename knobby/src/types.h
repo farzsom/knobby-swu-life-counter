@@ -7,14 +7,13 @@
 #include <string.h>
 
 // ---------- constants ----------
-#define MAX_GAME_PLAYERS 8
 #define MAX_DISPLAY_PLAYERS 4
-#define MAX_ENEMY_COUNT (MAX_GAME_PLAYERS - 1)
-#define LIFE_MIN -999
-#define LIFE_MAX 999
-#define COUNTER_MIN 0
-#define COUNTER_MAX 9999
-#define DEFAULT_LIFE_TOTAL 40
+#define DAMAGE_MIN 0
+#define DAMAGE_MAX 99
+#define BASE_HP_MIN 1
+#define BASE_HP_MAX 99
+#define DEFAULT_BASE_HP 30
+#define DEFAULT_PLAYERS_TO_TRACK 1
 #define DEFAULT_BRIGHTNESS_PERCENT 30
 #define INTRO_CHAR_COUNT 7
 #define MULTIPLAYER_COUNT 4
@@ -22,10 +21,18 @@
 
 // ---------- color modes ----------
 #define COLOR_MODE_PLAYER     0
-#define COLOR_MODE_LIFE       1
+#define COLOR_MODE_HP         1
 #define COLOR_MODE_COUNT      2
 
 #define CUSTOM_COLOR_COUNT 18
+
+// ---------- token badges ----------
+#define INITIATIVE_COLOR   0xF2C230
+#define FORCE_COLOR        0x2F7FD0
+#define INITIATIVE_BADGE_W 86
+#define FORCE_BADGE_W      58
+#define TOKEN_BADGE_GAP    6
+#define TOKEN_COUNT        2   /* badge slots: initiative, force */
 
 // ---------- orientation modes ----------
 #define ORIENTATION_MODE_ABSOLUTE 0
@@ -56,11 +63,6 @@ static const int deselect_ms[] = {0, 5000, 15000, 30000};
 
 // ---------- types ----------
 typedef struct {
-    const char *name;
-    int damage;
-} enemy_state_t;
-
-typedef struct {
     knob_event_t event;
 } knob_input_event_t;
 
@@ -75,10 +77,17 @@ typedef struct {
 } quad_item_t;
 
 // ---------- utility functions ----------
-static inline int clamp_life(int value)
+static inline int clamp_damage(int value)
 {
-    if (value < LIFE_MIN) return LIFE_MIN;
-    if (value > LIFE_MAX) return LIFE_MAX;
+    if (value < DAMAGE_MIN) return DAMAGE_MIN;
+    if (value > DAMAGE_MAX) return DAMAGE_MAX;
+    return value;
+}
+
+static inline int clamp_base_hp(int value)
+{
+    if (value < BASE_HP_MIN) return BASE_HP_MIN;
+    if (value > BASE_HP_MAX) return BASE_HP_MAX;
     return value;
 }
 
@@ -89,56 +98,45 @@ static inline int clamp_brightness(int value)
     return value;
 }
 
-static inline int clamp_counter(int value)
-{
-    if (value < COUNTER_MIN) return COUNTER_MIN;
-    if (value > COUNTER_MAX) return COUNTER_MAX;
-    return value;
-}
-
-static inline int get_arc_display_value(int value, int max_life)
+static inline int get_arc_display_value(int value, int max_value)
 {
     if (value < 0) return 0;
-    if (value > max_life) return max_life;
+    if (value > max_value) return max_value;
     return value;
 }
 
-// ---------- life color tiers ----------
-#define LIFE_TIER_RED    0
-#define LIFE_TIER_YELLOW 1
-#define LIFE_TIER_GREEN  2
-#define LIFE_TIER_PURPLE 3
-#define LIFE_TIER_COUNT  4
+// ---------- HP color tiers ----------
+/* Tiers follow the HP a base has left, so a base turns yellow at half
+   HP and red in its last quarter. */
+#define HP_TIER_RED    0
+#define HP_TIER_YELLOW 1
+#define HP_TIER_GREEN  2
+#define HP_TIER_COUNT  3
 
-#define LIFE_VIB_DIM  0
-#define LIFE_VIB_MID  1
-#define LIFE_VIB_VIV  2
-#define LIFE_VIB_COUNT 3
+#define VIB_DIM  0
+#define VIB_MID  1
+#define VIB_VIV  2
+#define VIB_COUNT 3
 
-static const uint32_t life_color_table[LIFE_TIER_COUNT][LIFE_VIB_COUNT] = {
+static const uint32_t hp_color_table[HP_TIER_COUNT][VIB_COUNT] = {
     /* dim        mid        vivid */
     {0x4D1C1C, 0xF44336, 0xFF0000},  /* red    */
     {0x4D4D00, 0xFFEB3B, 0xFFFF00},  /* yellow */
     {0x024D3A, 0x06D6A0, 0x66FFD9},  /* green  */
-    {0x2E004D, 0x7B1FA2, 0xAA00FF},  /* purple */
 };
 
-static inline int get_life_tier(int value, int max_life)
+static inline int get_hp_tier(int damage, int base_hp)
 {
-    if (value > max_life)          return LIFE_TIER_PURPLE;
-    if (value >= max_life * 3 / 4) return LIFE_TIER_GREEN;
-    if (value >= max_life / 4)     return LIFE_TIER_YELLOW;
-    return LIFE_TIER_RED;
+    int remaining = base_hp - damage;
+
+    if (remaining * 2 >= base_hp) return HP_TIER_GREEN;
+    if (remaining * 4 >= base_hp) return HP_TIER_YELLOW;
+    return HP_TIER_RED;
 }
 
-static inline lv_color_t get_life_color(int value, int max_life)
+static inline lv_color_t get_hp_color_vib(int tier, int vibrancy)
 {
-    return lv_color_hex(life_color_table[get_life_tier(value, max_life)][LIFE_VIB_MID]);
-}
-
-static inline lv_color_t get_life_color_vib(int tier, int vibrancy)
-{
-    return lv_color_hex(life_color_table[tier][vibrancy]);
+    return lv_color_hex(hp_color_table[tier][vibrancy]);
 }
 
 static inline bool color_is_light(lv_color_t c)
@@ -173,6 +171,58 @@ static inline lv_obj_t *make_plain_box(lv_obj_t *parent,
     lv_obj_set_size(obj, w, h);
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     return obj;
+}
+
+/* Small rounded pill showing a token (Initiative, Force). Text color
+   follows the pill so it stays readable. */
+static inline lv_obj_t *make_token_badge(lv_obj_t *parent, const char *txt,
+                                          uint32_t color, lv_coord_t w)
+{
+    lv_obj_t *badge = lv_label_create(parent);
+    lv_color_t bg = lv_color_hex(color);
+
+    lv_label_set_text(badge, txt);
+    lv_obj_set_size(badge, w, 22);
+    lv_obj_set_style_text_font(badge, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_align(badge, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(badge, color_is_light(bg) ? lv_color_black() : lv_color_white(), 0);
+    lv_obj_set_style_bg_color(badge, bg, 0);
+    lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(badge, 11, 0);
+    lv_obj_set_style_pad_top(badge, 3, 0);
+    lv_obj_set_style_border_color(badge, lv_color_black(), 0);
+    lv_obj_set_style_border_width(badge, 1, 0);
+    lv_obj_clear_flag(badge, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(badge, LV_OBJ_FLAG_HIDDEN);
+    return badge;
+}
+
+/* Centers the visible token badges as one row. Writes each visible
+   badge's x offset from the row center and returns how many show. */
+static inline int token_row_offsets(const bool show[TOKEN_COUNT],
+                                    lv_coord_t x_out[TOKEN_COUNT])
+{
+    static const lv_coord_t widths[TOKEN_COUNT] = {INITIATIVE_BADGE_W, FORCE_BADGE_W};
+    lv_coord_t total = 0;
+    lv_coord_t x;
+    int count = 0;
+    int i;
+
+    for (i = 0; i < TOKEN_COUNT; i++) {
+        if (!show[i]) continue;
+        total += widths[i];
+        count++;
+    }
+    if (count > 1) total += TOKEN_BADGE_GAP * (count - 1);
+
+    x = -total / 2;
+    for (i = 0; i < TOKEN_COUNT; i++) {
+        x_out[i] = 0;
+        if (!show[i]) continue;
+        x_out[i] = x + widths[i] / 2;
+        x += widths[i] + TOKEN_BADGE_GAP;
+    }
+    return count;
 }
 
 static inline void load_screen_if_needed(lv_obj_t *screen)

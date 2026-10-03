@@ -13,8 +13,10 @@ change font sizes, weights, or character sets.
 
 | File | Size | Weight | Characters | Used for |
 |------|------|--------|------------|----------|
-| `lv_font_montserrat_bold_116.c` | 116px | Bold | `+-= 0-9` | Life total, dice result |
-| `lv_font_montserrat_regular_48.c` | 48px | Regular | `+-= 0-9` | Life preview total ("= xxx") |
+| `lv_font_montserrat_bold_116.c` | 116px | Bold | `+-= 0-9` | 1-player damage total |
+| `lv_font_montserrat_regular_48.c` | 48px | Regular | `+-= 0-9` | Damage preview total ("= xx") |
+| `lv_font_montserrat_bold_56.c` | 56px | Bold | `+-= 0-9` | Multiplayer damage, base HP editor |
+| `lv_font_montserrat_bold_44.c` | 44px | Bold | `+-= 0-9` | Multiplayer damage (centric quadrants) |
 
 ## Regenerating fonts
 
@@ -73,8 +75,8 @@ cd sim && make clean && make && ./generate_matrix.sh
 
 ## Font source files
 
-- `Montserrat-Bold.ttf` — used for life total and dice result
-- `Montserrat-Regular.ttf` — used for life preview total
+- `Montserrat-Bold.ttf` — used for damage totals
+- `Montserrat-Regular.ttf` — used for the damage preview total
 
 Both are from the [Montserrat project](https://github.com/JulietaUla/Montserrat).
 

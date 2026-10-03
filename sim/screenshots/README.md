@@ -18,7 +18,7 @@ This installs the ESP32 Arduino core and LVGL 8.3.11, which the simulator compil
 
 ```bash
 make screenshot                          # main screen with defaults
-make screenshot ARGS="--screen dice"     # specific screen
+make screenshot ARGS="--screen coin"     # specific screen
 ```
 
 ### Full test matrix
@@ -27,19 +27,16 @@ make screenshot ARGS="--screen dice"     # specific screen
 make generate-matrix
 ```
 
-This generates ~308 screenshots covering:
+This generates ~170 screenshots covering:
 
-- **Life preview deltas** (+999, -999, +12, -12, +1, -1) for 1p, 2p, 3p, 4p modes
+- **Damage preview** for 1p, 2p, 3p, 4p modes and every seat
 - **Orientations** (absolute, centric, tabletop) for all multiplayer screens
-- **Life totals** (0, 20, 40, 999) across all player modes
-- **Life-color mode** (backgrounds change color based on remaining life)
-- **Selected player highlights** for all players in all modes
-- **Player counters** (Commander Tax, Partner Tax, Poison, Experience) with random values
-- **Brightness** at 1%, 50%, 100%
-- **Counter edit** for all 4 counter types
-- **Damage/select screens** with non-zero values
-- **Settings pages** with different toggle states
-- **Battery, dice, event log, intro** screens
+- **Damage totals** including destroyed bases and per-player base HP
+- **HP-color mode** (backgrounds change color as a base runs out of HP)
+- **Initiative and Force badges** on every seat
+- **Player menu, base HP editor, rename, colors**
+- **Game mode, settings pages, brightness, battery**
+- **Coin flip, event log, round timer, intro**
 
 An `index.html` gallery is generated alongside the PNGs for easy browsing.
 
@@ -65,19 +62,20 @@ The gallery shows thumbnail previews grouped by category, with links to full-siz
 The simulator supports many options for setting game state before capture:
 
 ```bash
-# 4-player with custom life, names, and a selected player
-make screenshot ARGS="--screen 4p --track 4 \
-    --life 200,30,40,15 --names Alice,Bob,Charlie,Dave --selected 0"
+# 4-player with damage, base HP, names, tokens and a selected player
+make screenshot ARGS="--screen 4p --track 4 --damage 20,3,14,9 \
+    --player-hp 30,27,28,25 --names Alice,Bob,Charlie,Dave \
+    --initiative 2 --force 1,0,0,1 --selected 0"
 
-# Life preview delta (shows pending change before commit)
-make screenshot ARGS="--screen 1p --track 1 --preview-delta +12"
+# Damage preview delta (shows pending change before commit)
+make screenshot ARGS="--screen 1p --track 1 --damage 12 --preview-delta +3"
 
-# Multiplayer with life-color mode and centric orientation
+# Multiplayer with HP-color mode and centric orientation
 make screenshot ARGS="--screen 4p --track 4 --color-mode 1 --orientation 1 \
-    --life 5,15,35,50"
+    --damage 5,15,22,28"
 
-# Dice with a specific result
-make screenshot ARGS="--screen dice --dice 17"
+# Coin flip with a specific result
+make screenshot ARGS="--screen coin --coin 2"
 
 # Event log with random entries
 make screenshot ARGS="--screen damage-log --random-log"
@@ -97,7 +95,7 @@ To add new screenshots to `generate_matrix.sh`, use the `shot` helper function:
 
 ```bash
 # shot <filename> [knobby_sim args...]
-shot "my_new_screen.png" --screen 4p --track 4 --life 100,200,300,400
+shot "my_new_screen.png" --screen 4p --track 4 --damage 10,20,25,29
 ```
 
 This runs the simulator with the given args and tracks the output file for inclusion in `index.html`.
@@ -106,7 +104,7 @@ This runs the simulator with the given args and tracks the output file for inclu
 
 **Adding a new CLI flag:** Add parsing in `sim/sim_main.c`'s arg loop, apply the state in the `APPLY_RAM_OVERRIDES` macro, then use it in `generate_matrix.sh`.
 
-**Index sections:** The script groups screenshots into sections by filename prefix pattern matching (e.g. `*_preview_*` → "Life Preview", `*_life[0-9]*` → "Life Totals"). To add a new section, add a case to the sorting block near the end of `generate_matrix.sh` and a corresponding `write_section` call.
+**Index sections:** The script groups screenshots into sections by filename prefix pattern matching (e.g. `*_preview_*` → "Damage Preview", `*_tokens*` → "Initiative and Force"). To add a new section, add a case to the sorting block near the end of `generate_matrix.sh` and a corresponding `write_section` call.
 
 ## Notes
 

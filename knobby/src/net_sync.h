@@ -15,18 +15,17 @@
    (LVGL) task. */
 
 #define NET_SYNC_MAX_PLAYERS 4  /* == MAX_DISPLAY_PLAYERS */
-#define NET_SYNC_MAX_SOURCES 8  /* == MAX_GAME_PLAYERS    */
 
-#define NET_SYNC_ELIM      0x01 /* eliminated flag bits */
+#define NET_SYNC_ELIM        0x01 /* player flag bits */
 #define NET_SYNC_ELIM_MANUAL 0x02
+#define NET_SYNC_FORCE       0x04
+#define NET_SYNC_INITIATIVE  0x08
 
 typedef struct __attribute__((packed)) {
     uint16_t version;    /* per-player Lamport version, wraps (serial arithmetic) */
-    int16_t  life;
-    int16_t  counters[4];                    /* == COUNTER_TYPE_COUNT */
-    uint8_t  cmd_damage[NET_SYNC_MAX_SOURCES]; /* column of cmd_damage_totals */
-    uint8_t  eliminated;                     /* NET_SYNC_ELIM* bits */
-    uint8_t  reserved;                       /* keeps u16 fields even-aligned */
+    int16_t  damage;     /* damage on the base */
+    uint8_t  base_hp;
+    uint8_t  flags;      /* NET_SYNC_* bits */
 } net_sync_player_t;
 
 typedef struct __attribute__((packed)) {
@@ -46,7 +45,7 @@ typedef struct __attribute__((packed)) {
        rare, setup-time edits, so set-level LWW is enough. Deliberately
        epoch-independent — names outlive game resets. */
     uint16_t version;
-    char names[NET_SYNC_MAX_SOURCES][NET_SYNC_NAME_LEN];
+    char names[NET_SYNC_MAX_PLAYERS][NET_SYNC_NAME_LEN];
 } net_sync_names_t;
 
 /* Implemented in game.c */

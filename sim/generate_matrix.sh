@@ -18,398 +18,185 @@ shot() {
     FILES+=("$filename")
 }
 
+ORIENT_NAMES=("absolute" "centric" "tabletop")
+
 # ============================================================
-# 1. Life preview deltas — 1p mode
+# 1. Damage preview — 1p mode
 # ============================================================
-for delta in +444 -444 +1; do
+for delta in +1 +5 -3 +99; do
     tag=$(echo "$delta" | tr '+' 'p' | tr '-' 'n')
     shot "1p_preview_${tag}.png" --screen 1p --track 1 \
-        --preview-delta "$delta" --preview-player -1
+        --damage 12 --preview-delta "$delta" --preview-player -1
 done
 
 # ============================================================
-# 2. Life preview deltas — multiplayer modes × orientations
+# 2. Damage preview — multiplayer modes × orientations
 # ============================================================
-# Worst-case (+444) in every quadrant × orientation to catch overlap/clipping
 for track in 2 3 4; do
     max_player=$((track - 1))
     for orient in 0 1 2; do
-        orient_name=("absolute" "centric" "tabletop")
-        oname=${orient_name[$orient]}
+        oname=${ORIENT_NAMES[$orient]}
         for player in $(seq 0 $max_player); do
-            shot "${track}p_${oname}_p${player}_preview_p444.png" \
+            shot "${track}p_${oname}_p${player}_preview_p5.png" \
                 --screen ${track}p --track "$track" --orientation "$orient" \
-                --preview-delta +444 --preview-player "$player"
-        done
-    done
-done
-# Remaining deltas for player 0 at absolute orientation (formatting coverage)
-for track in 2 3 4; do
-    for delta in -444 +1 -1 +12 -12; do
-        tag=$(echo "$delta" | tr '+' 'p' | tr '-' 'n')
-        shot "${track}p_absolute_p0_preview_${tag}.png" \
-            --screen ${track}p --track "$track" --orientation 0 \
-            --preview-delta "$delta" --preview-player 0
-    done
-done
-
-# ============================================================
-# 3. Life totals at specific values — all player modes × orientations
-# ============================================================
-# All life values at one orientation (color tier coverage)
-for life in -5 0 20 40 444; do
-    ltag=$life
-    [ "$life" -lt 0 ] && ltag="n${life#-}"
-    shot "1p_life${ltag}.png" --screen 1p --track 1 \
-        --starting-life 40 --life "$life"
-
-    # 1p — custom color override
-    shot "1p_custom_life${ltag}.png" --screen 1p --track 1 \
-        --starting-life 40 --life "$life" \
-        --player-override 1,0,0,0 --player-colors 4,0,0,0
-
-    # multiplayer — player colors
-    for track in 2 3 4; do
-        life_csv=$(printf "%s" "$life"; for j in $(seq 2 $track); do printf ",%s" "$life"; done)
-        shot "${track}p_absolute_life${ltag}.png" \
-            --screen ${track}p --track "$track" --orientation 0 \
-            --starting-life 40 --life "$life_csv"
-    done
-done
-# Worst-case widths (444, -5) across all orientations for clipping detection
-for life in -5 444; do
-    ltag=$life
-    [ "$life" -lt 0 ] && ltag="n${life#-}"
-    for track in 2 3 4; do
-        life_csv=$(printf "%s" "$life"; for j in $(seq 2 $track); do printf ",%s" "$life"; done)
-        for orient in 1 2; do
-            orient_name=("absolute" "centric" "tabletop")
-            oname=${orient_name[$orient]}
-            shot "${track}p_${oname}_life${ltag}.png" \
-                --screen ${track}p --track "$track" --orientation "$orient" \
-                --starting-life 40 --life "$life_csv"
+                --damage 10,10,10,10 --preview-delta +5 --preview-player "$player"
         done
     done
 done
 
 # ============================================================
-# 4. Life-color mode — multiplayer × orientations × mixed life
+# 3. Damage totals — 1p and multiplayer, including destroyed bases
 # ============================================================
+for dmg in 0 9 15 23 29 30; do
+    shot "1p_damage${dmg}.png" --screen 1p --track 1 --damage "$dmg"
+    shot "1p_hpcolor_damage${dmg}.png" --screen 1p --track 1 --damage "$dmg" --color-mode 1
+done
+shot "1p_damage99_hp25.png" --screen 1p --track 1 --base-hp 25 --damage 99
+
 for track in 2 3 4; do
-    case "$track" in
-        2) life_csv="5,35" ;;
-        3) life_csv="5,20,35" ;;
-        4) life_csv="5,15,35,50" ;;
-    esac
     for orient in 0 1 2; do
-        orient_name=("absolute" "centric" "tabletop")
-        oname=${orient_name[$orient]}
-        shot "${track}p_${oname}_lifecolor_mixed.png" \
-            --screen ${track}p --track "$track" --orientation "$orient" \
-            --color-mode 1 --starting-life 40 --life "$life_csv"
+        oname=${ORIENT_NAMES[$orient]}
+        shot "${track}p_${oname}_damage.png" --screen ${track}p --track "$track" \
+            --orientation "$orient" --damage 0,12,24,29 --player-hp 30,27,28,25
+        shot "${track}p_${oname}_hpcolor.png" --screen ${track}p --track "$track" \
+            --orientation "$orient" --damage 3,14,22,29 --color-mode 1
+        shot "${track}p_${oname}_destroyed.png" --screen ${track}p --track "$track" \
+            --orientation "$orient" --damage 30,12,30,5 --auto-eliminate 1
     done
 done
 
 # ============================================================
-# 5. Selected player (no preview) — multiplayer, one orientation
+# 4. Tokens — initiative and Force on every seat
 # ============================================================
+shot "1p_tokens_both.png" --screen 1p --track 1 --damage 8 --initiative 0 --force 1
+shot "1p_tokens_force.png" --screen 1p --track 1 --damage 8 --force 1
 for track in 2 3 4; do
     max_player=$((track - 1))
-    for player in $(seq 0 $max_player); do
-        shot "${track}p_absolute_selected_p${player}.png" \
-            --screen ${track}p --track "$track" --orientation 0 \
-            --selected "$player"
-    done
-done
-
-# ============================================================
-# 5b. Multi-select — multiple players selected together (knob hits all)
-# ============================================================
-shot "multiselect_2p_01.png"  --screen 2p --track 2 --multi-select 1 --selected-players 0,1
-shot "multiselect_3p_02.png"  --screen 3p --track 3 --multi-select 1 --selected-players 0,2
-shot "multiselect_4p_02.png"  --screen 4p --track 4 --multi-select 1 --selected-players 0,2
-shot "multiselect_4p_013.png" --screen 4p --track 4 --multi-select 1 --selected-players 0,1,3
-# Shared-delta preview across the selected set (damage and heal)
-shot "multiselect_4p_preview_neg.png" --screen 4p --track 4 --multi-select 1 \
-    --selected-players 0,1,2 --preview-delta -3 --life 20,30,40,15
-shot "multiselect_3p_preview_pos.png" --screen 3p --track 3 --multi-select 1 \
-    --selected-players 0,1,2 --preview-delta 5 --life 20,30,40
-
-# ============================================================
-# 6. Random counters — multiplayer × orientations + 1p
-# ============================================================
-shot "1p_counters.png" --screen 1p --random-counters --auto-eliminate 0
-for track in 2 3 4; do
     for orient in 0 1 2; do
-        orient_name=("absolute" "centric" "tabletop")
-        oname=${orient_name[$orient]}
-        shot "${track}p_${oname}_counters.png" \
-            --screen ${track}p --track "$track" --orientation "$orient" \
-            --random-counters --auto-eliminate 0
+        oname=${ORIENT_NAMES[$orient]}
+        for player in $(seq 0 $max_player); do
+            shot "${track}p_${oname}_tokens_p${player}.png" --screen ${track}p --track "$track" \
+                --orientation "$orient" --damage 7,14,21,28 --initiative "$player" --force 1,1,1,1
+        done
     done
 done
 
 # ============================================================
-# 7. Brightness at different levels
-# ============================================================
-for bri in 1 50 100; do
-    shot "brightness_${bri}pct.png" --screen brightness --brightness "$bri"
-done
-
-# ============================================================
-# 8. Counter-edit for each counter type
-# ============================================================
-for ct in 0 1 2 3; do
-    ct_name=("cmd_tax" "partner_tax" "poison" "experience")
-    shot "counter_edit_${ct_name[$ct]}.png" --screen counter-edit \
-        --counter-type "$ct" --counter-value $((RANDOM % 50 + 1)) \
-        --counter-player $((RANDOM % 4))
-done
-# Pending knob delta previews (delta big, resulting count beneath)
-shot "counter_edit_preview_pos.png" --screen counter-edit \
-    --counter-type 2 --counter-value 6 --counter-delta 3 --counter-player 1
-shot "counter_edit_preview_neg.png" --screen counter-edit \
-    --counter-type 0 --counter-value 4 --counter-delta -2 --counter-player 2
-
-# ============================================================
-# 9. Damage screen with non-zero damage
-# ============================================================
-shot "damage_nonzero.png" --screen damage --names Maya,Leah,Kyle \
-    --enemy-damage 7,3,12
-# Pending knob delta previews (delta big, resulting total beneath)
-shot "damage_preview_pos.png" --screen damage --names Maya,Leah,Kyle \
-    --enemy-damage 7,3,12 --damage-delta 3
-shot "damage_preview_neg.png" --screen damage --names Maya,Leah,Kyle \
-    --enemy-damage 7,3,12 --damage-delta -2
-
-# ============================================================
-# 10. Select screen with accumulated commander damage
-# ============================================================
-# 1-7 enemies (2-8 players)
-shot "select_2p.png" --screen select --players 2 --track 1 \
-    --names Maya,Leah --enemy-damage 9
-shot "select_3p.png" --screen select --players 3 --track 1 \
-    --names Maya,Leah,Kyle --enemy-damage 14,6
-shot "select_4p.png" --screen select --players 4 --track 4 \
-    --names Maya,Leah,Kyle,Devin --enemy-damage 14,6,21
-shot "select_5p.png" --screen select --players 5 --track 4 \
-    --names Maya,Leah,Kyle,Devin,Riku --enemy-damage 3,0,8,0
-shot "select_6p.png" --screen select --players 6 --track 4 \
-    --names Maya,Leah,Kyle,Devin,Riku,Sarah --enemy-damage 5,0,12,0,3
-shot "select_7p.png" --screen select --players 7 --track 4 \
-    --names Maya,Leah,Kyle,Devin,Riku,Sarah,Nolan \
-    --enemy-damage 5,0,12,0,3,0
-shot "select_8p.png" --screen select --players 8 --track 4 \
-    --names Maya,Leah,Kyle,Devin,Riku,Sarah,Nolan,Tomoko \
-    --enemy-damage 5,0,12,0,3,0,7
-# select screen with an eliminated player (Kyle at 0 life)
-shot "select_eliminated.png" --screen select --players 5 --track 4 \
-    --names Maya,Leah,Kyle,Devin,Riku --enemy-damage 3,0,21,0 \
-    --life 40,40,0,40 --auto-eliminate 1
-
-# ============================================================
-# 11. Custom-life with non-default value
-# ============================================================
-shot "custom_life_123.png" --screen custom-life --starting-life 123
-
-# ============================================================
-# 12. Game-mode with non-default settings
-# ============================================================
-shot "game_mode_2p_20.png" --screen game-mode --players 2 --track 2 --starting-life 20
-shot "game_mode_3p_30.png" --screen game-mode --players 3 --track 3 --starting-life 30
-shot "game_mode_8p_t4.png" --screen game-mode --players 8 --track 4 --starting-life 40
-
-# ============================================================
-# 13. Per-player color mode
+# 5. Selection and multi-select
 # ============================================================
 for track in 2 3 4; do
-    for orient in 0 1 2; do
-        orient_name=("absolute" "centric" "tabletop")
-        oname=${orient_name[$orient]}
-        case "$track" in
-            2) colors="5,9";       overrides="1,1" ;;
-            3) colors="5,9,0";     overrides="1,1,0" ;;
-            4) colors="0,5,7,9";   overrides="0,1,1,1" ;;
-        esac
-        shot "${track}p_${oname}_perplayer.png" \
-            --screen ${track}p --track "$track" --orientation "$orient" \
-            --player-colors "$colors" --player-override "$overrides"
-    done
+    shot "${track}p_selected_p0.png" --screen ${track}p --track "$track" --selected 0
 done
+shot "multiselect_4p_preview.png" --screen 4p --track 4 --multi-select 1 \
+    --selected-players 0,1,2 --preview-delta 2 --damage 5,10,15,20
 
 # ============================================================
-# 14. Color menu and picker screens
+# 6. Per-player colors
 # ============================================================
+for track in 2 4; do
+    shot "${track}p_perplayer.png" --screen ${track}p --track "$track" \
+        --player-colors 4,5,6,13 --player-override 1,1,1,1
+done
 shot "color_menu.png" --screen color-menu --menu-player 0
 shot "color_picker.png" --screen color-picker --menu-player 0
 
 # ============================================================
-# 15. Settings: every toggle in every state, page-agnostic.
-# "setting:<id>" makes the sim find whichever page hosts the item,
-# so this section never changes when settings move between pages.
+# 7. Player menus
+# ============================================================
+shot "player_menu_default.png" --screen player-menu
+shot "player_menu_tokens.png" --screen player-menu --initiative 0 --force 1 --player-hp 27
+shot "player_menu_facing_2p_tabletop_p1.png" --screen player-menu \
+    --track 2 --orientation 2 --menu-facing 1 --menu-player 1
+shot "hp_edit.png" --screen hp-edit --player-hp 30
+shot "hp_edit_preview_neg.png" --screen hp-edit --player-hp 30 --hp-edit-delta -4
+shot "hp_edit_preview_pos.png" --screen hp-edit --player-hp 25 --hp-edit-delta 8
+shot "eliminated_menu.png" --screen eliminated
+shot "rename.png" --screen rename
+shot "rename_longnames.png" --screen rename \
+    --names "Bossk the Hunter,Sabine Wren,Grand Moff Tarkin,Hera Syndulla"
+
+# ============================================================
+# 8. Game mode and default base HP
+# ============================================================
+shot "game_mode_default.png" --screen game-mode
+shot "game_mode_4p_25.png" --screen game-mode --track 4 --base-hp 25 --random-first 0
+shot "custom_hp_33.png" --screen custom-hp --base-hp 33
+
+# ============================================================
+# 9. Settings: every toggle in every state, page-agnostic.
 # ============================================================
 for dim in 0 1 2 3; do
-    dim_name=("off" "15s" "30s" "60s")
-    shot "setting_autodim_${dim_name[$dim]}.png" --screen setting:autodim --auto-dim "$dim"
+    shot "setting_autodim_${dim}.png" --screen setting:autodim --auto-dim "$dim"
 done
-
 for cm in 0 1; do
-    cm_name=("player" "life")
-    shot "setting_colormode_${cm_name[$cm]}.png" --screen setting:color-mode --color-mode "$cm"
+    shot "setting_colormode_${cm}.png" --screen setting:color-mode --color-mode "$cm"
 done
-
 for dt in 0 1 2 3; do
-    dt_name=("never" "5s" "15s" "30s")
-    shot "setting_deselect_${dt_name[$dt]}.png" --screen setting:deselect --deselect "$dt"
+    shot "setting_deselect_${dt}.png" --screen setting:deselect --deselect "$dt"
 done
-
 for rot in 0 1 2; do
-    rot_name=("absolute" "centric" "tabletop")
-    shot "setting_orientation_${rot_name[$rot]}.png" --screen setting:orientation --orientation "$rot"
+    shot "setting_orientation_${rot}.png" --screen setting:orientation --orientation "$rot"
 done
-
-# Settings page 3 (gameplay toggles: auto-eliminate + multi-select)
 for ae in 0 1; do
-    ae_name=("off" "on")
-    shot "setting_autoelim_${ae_name[$ae]}.png" --screen setting:auto-eliminate --auto-eliminate "$ae"
+    shot "setting_autoelim_${ae}.png" --screen setting:auto-eliminate --auto-eliminate "$ae"
 done
-
-for rf in 0 1; do
-    rf_name=("off" "on")
-    shot "setting_randomfirst_${rf_name[$rf]}.png" --screen setting:random-first --random-first "$rf"
-done
-
 for ms in 0 1; do
-    ms_name=("off" "on")
-    shot "setting_multiselect_${ms_name[$ms]}.png" --screen setting:multi-select --multi-select "$ms"
+    shot "setting_multiselect_${ms}.png" --screen setting:multi-select --multi-select "$ms"
 done
-
-# Rotate screen + rotated life screens (physical display rotation)
+for mf in 0 1; do
+    shot "setting_menufacing_${mf}.png" --screen setting:menu-facing --menu-facing "$mf"
+done
 shot "setting_rotate_screen.png" --screen rotate
 shot "1p_rot90.png"  --screen 1p --track 1 --display-rotation 1
 shot "4p_rot180.png" --screen 4p --track 4 --display-rotation 2
-
-# Menu facing: player menus rotate toward the acting player
-for mf in 0 1; do
-    mf_name=("fixed" "face")
-    shot "setting_menufacing_${mf_name[$mf]}.png" --screen setting:menu-facing --menu-facing "$mf"
-done
-shot "player_menu_facing_2p_tabletop_p1.png" --screen player-menu \
-    --track 2 --orientation 2 --menu-facing 1 --menu-player 1
-shot "player_menu_facing_4p_centric_p2.png" --screen player-menu \
-    --track 4 --orientation 1 --menu-facing 1 --menu-player 2
-shot "player_menu_facing_off_p1.png" --screen player-menu \
-    --track 2 --orientation 2 --menu-facing 0 --menu-player 1
-shot "cmd_damage_select_facing_p1.png" --screen select \
-    --track 4 --players 4 --orientation 2 --menu-facing 1 --menu-player 1 \
-    --enemy-damage 5,12,3
-shot "cmd_damage_edit_facing_p1.png" --screen damage \
-    --track 4 --players 4 --orientation 2 --menu-facing 1 --menu-player 1 \
-    --enemy-damage 5,12,3
-shot "cmd_damage_select_facing_off_p1.png" --screen select \
-    --track 4 --players 4 --orientation 2 --menu-facing 0 --menu-player 1 \
-    --enemy-damage 5,12,3
-
 shot "setting_tablesync_off.png"    --screen table-sync --track 4
 shot "setting_tablesync_ingame.png" --screen table-sync --track 4 --table-sync 1 --table-session 14242
-shot "setting_tablesync_1p.png"     --screen table-sync
+shot "setting_tablesync_1p.png"     --screen table-sync --track 1
 
-# All settings pages in their default state (count derived from the sim)
-NPAGES=$($SIM --print-settings-pages)
-for p in $(seq 1 "$NPAGES"); do
+PAGES=$($SIM --print-settings-pages)
+for p in $(seq 1 "$PAGES"); do
     shot "settings_page${p}.png" --screen "settings-page${p}"
 done
 
-# ============================================================
-# 14. All-damage screen with random value
-# ============================================================
-shot "all_damage_random.png" --screen all-damage \
-    --all-damage-value $((RANDOM % 30 + 1))
+for bri in 1 30 100; do
+    shot "brightness_${bri}pct.png" --screen brightness --brightness "$bri"
+done
 
 # ============================================================
-# 15. Player-menu for random player
+# 10. Battery and low-battery indicator
 # ============================================================
-mp=$((RANDOM % 4))
-shot "player_menu_p${mp}.png" --screen player-menu \
-    --menu-player "$mp"
-
-# ============================================================
-# 16. Battery at random legal voltage
-# ============================================================
-# Pick from realistic range: 3.35V (0%) to 4.18V (100%)
-voltages=("3.40" "3.55" "3.74" "3.96" "4.18")
-v=${voltages[$((RANDOM % ${#voltages[@]}))]}
-shot "battery_${v}v.png" --screen battery --battery-voltage "$v"
-
-# ============================================================
-# 16b. Low-battery indicator on gameplay screens
-# ============================================================
+for v in 4.15 3.85 3.55; do
+    shot "battery_${v}v.png" --screen battery --battery-voltage "$v"
+done
 # 3.62V is ~8% (solid icon, 5-10% tier).  3.40V is ~3% (blink, <5% tier).
-# Note: blink screenshot captures the visible phase deterministically
-# because the icon shows on the first timer fire after entering low state.
 shot "lowbatt_solid_1p.png" --screen 1p --track 1 --battery-voltage 3.62
 shot "lowbatt_blink_1p.png" --screen 1p --track 1 --battery-voltage 3.40
 for track in 2 3 4; do
     shot "lowbatt_solid_${track}p.png" --screen ${track}p --track "$track" \
-        --orientation 0 --battery-voltage 3.62
+        --battery-voltage 3.62
 done
 
 # ============================================================
-# 17. Dice with a result
+# 11. Tools: coin flip, event log, round timer
 # ============================================================
-d=$((RANDOM % 20 + 1))
-shot "dice_${d}.png" --screen dice --dice "$d"
-
-# ============================================================
-# 18. Event log with random data
-# ============================================================
-shot "damage_log_random.png" --screen damage-log --random-log
-
-# ============================================================
-# 19. Timer overlay — 1p mode at worst-case life totals
-# ============================================================
-for life in 0 444; do
-    shot "1p_timer_life${life}.png" --screen 1p --track 1 \
-        --starting-life 40 --life "$life" \
-        --turn-number $((RANDOM % 31)) --turn-elapsed $((RANDOM % 21600 * 1000))
+shot "coin_heads.png" --screen coin --coin 1
+shot "coin_tails.png" --screen coin --coin 2
+shot "damage_log_random.png" --screen damage-log --random-log \
+    --names Luke,Vader,Leia,Han
+shot "damage_log_empty.png" --screen damage-log
+for dmg in 0 29; do
+    shot "1p_timer_damage${dmg}.png" --screen 1p --track 1 --damage "$dmg" \
+        --turn-number 7 --turn-elapsed 2520000
 done
-
-# Timer with preview delta +444
-shot "1p_timer_preview_p444.png" --screen 1p --track 1 \
-    --preview-delta +444 --preview-player -1 \
-    --turn-number $((RANDOM % 31)) --turn-elapsed $((RANDOM % 21600 * 1000)) \
-    --random-counters
+shot "1p_timer_preview.png" --screen 1p --track 1 --damage 12 \
+    --turn-number 3 --turn-elapsed 600000 --preview-delta 4
 
 # ============================================================
-# 20. Menus, rename, counters-menu (previously uncovered)
+# 12. Menus and intro
 # ============================================================
 shot "menu_main.png" --screen menu
 shot "menu_tools.png" --screen tools
-shot "counters_menu.png" --screen counters-menu
-shot "rename.png" --screen rename
-shot "rename_longnames.png" --screen rename \
-    --names "Maximilian,Bartholomew,Christopher,Evangelina"
-
-# ============================================================
-# 21. Intro screen
-# ============================================================
 shot "intro.png" --screen intro
-
-# ============================================================
-# 21. Mana Pool
-# ============================================================
-shot "mana_empty.png" --screen mana
-shot "mana_sel_white.png" --screen mana --mana 44,7,0,12,3,21 --mana-selected 0
-shot "mana_sel_blue.png" --screen mana --mana 2,44,5,0,18,9 --mana-selected 1
-shot "mana_sel_black.png" --screen mana --mana 8,3,44,15,0,6 --mana-selected 2
-shot "mana_sel_red.png" --screen mana --mana 0,11,4,44,7,33 --mana-selected 3
-shot "mana_sel_green.png" --screen mana --mana 14,0,9,3,44,1 --mana-selected 4
-shot "mana_sel_colorless.png" --screen mana --mana 6,22,1,8,0,44 --mana-selected 5
-shot "mana_3digit.png" --screen mana --mana 444,77,0,123,8,444 --mana-selected 0
-shot "mana_preview_pos.png" --screen mana --mana 5,3,0,7,2,1 --mana-selected 1 --mana-delta 12
-shot "mana_preview_neg.png" --screen mana --mana 5,3,0,7,2,1 --mana-selected 3 --mana-delta -4
-shot "mana_preview_max.png" --screen mana --mana 0,0,0,0,0,0 --mana-selected 0 --mana-delta 444
-shot "mana_preview_clamp.png" --screen mana --mana 3,0,0,0,0,0 --mana-selected 0 --mana-delta -99
 
 # ============================================================
 # Generate index.html
@@ -421,7 +208,7 @@ cat > "$INDEX" << 'HEADER'
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Knobby Screenshot Matrix</title>
+<title>Knobby SWU Screenshot Matrix</title>
 <style>
   body { font-family: sans-serif; max-width: 1200px; margin: 2rem auto; padding: 0 1rem; background: #f5f5f5; }
   h1 { margin-bottom: 0.25rem; }
@@ -434,7 +221,7 @@ cat > "$INDEX" << 'HEADER'
 </style>
 </head>
 <body>
-<h1>Knobby Screenshot Matrix</h1>
+<h1>Knobby SWU Screenshot Matrix</h1>
 HEADER
 
 echo "<p class=\"count\">$COUNT screenshots</p>" >> "$INDEX"
@@ -453,54 +240,40 @@ write_section() {
 }
 
 # Sort files into sections
-SEC_1P_PREV=(); SEC_2P_PREV=(); SEC_3P_PREV=(); SEC_4P_PREV=()
-SEC_LIFE=(); SEC_LIFECOLOR=(); SEC_PERPLAYER=(); SEC_SELECTED=(); SEC_MULTISEL=(); SEC_COUNTERS=()
-SEC_BRIGHT=(); SEC_COUNTER_EDIT=(); SEC_DAMAGE=(); SEC_SETTINGS=()
-SEC_TIMER=()
-SEC_MANA=()
-SEC_LOWBATT=()
-SEC_OTHER=()
+SEC_PREV=(); SEC_DAMAGE=(); SEC_HPCOLOR=(); SEC_DESTROYED=(); SEC_TOKENS=()
+SEC_SELECT=(); SEC_COLORS=(); SEC_PLAYER_MENU=(); SEC_GAME_MODE=(); SEC_SETTINGS=()
+SEC_BATTERY=(); SEC_TOOLS=(); SEC_OTHER=()
 
 for f in "${FILES[@]}"; do
     case "$f" in
-        multiselect_*)        SEC_MULTISEL+=("$f") ;;
-        lowbatt_*)            SEC_LOWBATT+=("$f") ;;
-        1p_preview_*)         SEC_1P_PREV+=("$f") ;;
-        2p_*_preview_*)       SEC_2P_PREV+=("$f") ;;
-        3p_*_preview_*)       SEC_3P_PREV+=("$f") ;;
-        4p_*_preview_*)       SEC_4P_PREV+=("$f") ;;
-        1p_timer_*)           SEC_TIMER+=("$f") ;;
-        *_lifecolor_*)        SEC_LIFECOLOR+=("$f") ;;
-        *_perplayer*)         SEC_PERPLAYER+=("$f") ;;
-        *_life[0-9n]*)        SEC_LIFE+=("$f") ;;
-        *_selected_*)         SEC_SELECTED+=("$f") ;;
-        *_counters.png)       SEC_COUNTERS+=("$f") ;;
-        brightness_*)         SEC_BRIGHT+=("$f") ;;
-        counter_edit_*)       SEC_COUNTER_EDIT+=("$f") ;;
-        damage_*|select_*|all_damage_*) SEC_DAMAGE+=("$f") ;;
-        settings_*|setting_*) SEC_SETTINGS+=("$f") ;;
-        mana_*)               SEC_MANA+=("$f") ;;
-        *)                    SEC_OTHER+=("$f") ;;
+        *_preview_*|multiselect_*)                 SEC_PREV+=("$f") ;;
+        *_hpcolor*)                                SEC_HPCOLOR+=("$f") ;;
+        *_destroyed.png)                           SEC_DESTROYED+=("$f") ;;
+        *_tokens*)                                 SEC_TOKENS+=("$f") ;;
+        *_damage*)                                 SEC_DAMAGE+=("$f") ;;
+        *_selected_*)                              SEC_SELECT+=("$f") ;;
+        *_perplayer.png|color_*)                   SEC_COLORS+=("$f") ;;
+        player_menu_*|hp_edit*|eliminated_*|rename*) SEC_PLAYER_MENU+=("$f") ;;
+        game_mode_*|custom_hp_*)                   SEC_GAME_MODE+=("$f") ;;
+        setting_*|settings_*|brightness_*|*_rot*)  SEC_SETTINGS+=("$f") ;;
+        battery_*|lowbatt_*)                       SEC_BATTERY+=("$f") ;;
+        coin_*|damage_log_*|1p_timer_*)            SEC_TOOLS+=("$f") ;;
+        *)                                         SEC_OTHER+=("$f") ;;
     esac
 done
 
-write_section "1-Player Life Preview" "${SEC_1P_PREV[@]}"
-write_section "2-Player Life Preview" "${SEC_2P_PREV[@]}"
-write_section "3-Player Life Preview" "${SEC_3P_PREV[@]}"
-write_section "4-Player Life Preview" "${SEC_4P_PREV[@]}"
-write_section "1-Player Timer Overlay" "${SEC_TIMER[@]}"
-write_section "Life Totals (Player Colors)" "${SEC_LIFE[@]}"
-write_section "Life Totals (Life Colors)" "${SEC_LIFECOLOR[@]}"
-write_section "Life Totals (Per-Player Colors)" "${SEC_PERPLAYER[@]}"
-write_section "Selected Player" "${SEC_SELECTED[@]}"
-write_section "Multi-Select" "${SEC_MULTISEL[@]}"
-write_section "Player Counters" "${SEC_COUNTERS[@]}"
-write_section "Brightness" "${SEC_BRIGHT[@]}"
-write_section "Counter Edit" "${SEC_COUNTER_EDIT[@]}"
-write_section "Damage / Select" "${SEC_DAMAGE[@]}"
+write_section "Damage Preview" "${SEC_PREV[@]}"
+write_section "Damage Totals" "${SEC_DAMAGE[@]}"
+write_section "HP Colors" "${SEC_HPCOLOR[@]}"
+write_section "Destroyed Bases" "${SEC_DESTROYED[@]}"
+write_section "Initiative and Force" "${SEC_TOKENS[@]}"
+write_section "Selected Player" "${SEC_SELECT[@]}"
+write_section "Player Colors" "${SEC_COLORS[@]}"
+write_section "Player Menus" "${SEC_PLAYER_MENU[@]}"
+write_section "Game Mode" "${SEC_GAME_MODE[@]}"
 write_section "Settings" "${SEC_SETTINGS[@]}"
-write_section "Mana Pool" "${SEC_MANA[@]}"
-write_section "Low Battery Indicator" "${SEC_LOWBATT[@]}"
+write_section "Battery" "${SEC_BATTERY[@]}"
+write_section "Tools" "${SEC_TOOLS[@]}"
 write_section "Other" "${SEC_OTHER[@]}"
 
 echo '</body></html>' >> "$INDEX"

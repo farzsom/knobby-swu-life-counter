@@ -1,9 +1,13 @@
-name: Release Firmware
+name: Build and Publish
 
+# Pushes to main rebuild the web installer on GitHub Pages.
+# Tags starting with "v" also publish a GitHub release with the binaries.
 on:
   push:
+    branches: [ main ]
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -15,16 +19,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-      
+
       - name: Setup Arduino CLI
         uses: arduino/setup-arduino-cli@v2
 
@@ -34,7 +34,7 @@ jobs:
           path: |
             ~/.arduino15/packages
             ~/Arduino/libraries
-          key: ${{ runner.os }}-arduino-deps-${{ hashFiles('README.md') }}
+          key: ${{ runner.os }}-arduino-deps-${{ hashFiles('Makefile') }}
           restore-keys: |
             ${{ runner.os }}-arduino-deps-
 
@@ -51,12 +51,35 @@ jobs:
         run: |
           arduino-cli compile --fqbn "esp32:esp32:esp32s3:FlashSize=16M,PSRAM=opi,USBMode=hwcdc,CDCOnBoot=cdc,FlashMode=qio,PartitionScheme=custom" --export-binaries knobby
 
-      - name: Prepare Web Site
+      - name: Prepare web installer
         run: |
-          # Copy exported binaries into the static web directory
           cp knobby/build/esp32.esp32.esp32s3/*.bin web/
-          # Update version in manifest.json to match the tag
-          sed -i "s/\"latest\"/\"${{ github.ref_name }}\"/g" web/manifest.json
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            VERSION="$GITHUB_REF_NAME"
+          else
+            VERSION="main-${GITHUB_SHA::7}"
+          fi
+          sed -i "s/\"latest\"/\"$VERSION\"/g" web/manifest.json
+
+      - name: Upload web installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: web
+
+  pages:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download web installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web
+          path: web
 
       - name: Setup Pages
         uses: actions/configure-pages@v6
@@ -73,15 +96,25 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v5
 
-      - name: Zip binaries for GitHub Release
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download web installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web
+          path: web
+
+      - name: Zip binaries
         run: |
           cd web
-          zip -r ../knobby-firmware-${{ github.ref_name }}.zip knobby.ino.bootloader.bin knobby.ino.partitions.bin boot_app0.bin knobby.ino.bin manifest.json
+          zip -r ../knobby-swu-firmware-${{ github.ref_name }}.zip knobby.ino.bootloader.bin knobby.ino.partitions.bin boot_app0.bin knobby.ino.bin manifest.json
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: knobby-firmware-${{ github.ref_name }}.zip
-          # Include the deployed GitHub Pages URL in the release body
-          body: "Install via GitHub Pages: ${{ steps.deployment.outputs.page_url }}"
+          files: knobby-swu-firmware-${{ github.ref_name }}.zip
+          body: "Install from the browser: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
           generate_release_notes: true
