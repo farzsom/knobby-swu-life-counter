@@ -31,7 +31,7 @@ Removed from the MTG version: life totals, commander damage, "damage to all", po
 
 Open the web installer in Chrome, Edge or Opera and follow the steps:
 
-**https://YOUR-GITHUB-NAME.github.io/knobby-swu-life-counter/**
+**https://farzsom.github.io/knobby-swu-life-counter/**
 
 > [!Warning]
 > Installation is at your own risk.
